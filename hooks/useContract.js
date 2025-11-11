@@ -18,6 +18,17 @@ export const useHealthcareContract = () => {
   // Write contract hook
   const { writeContract, data: hash, error, isPending } = useWriteContract();
 
+  // Validate contract is deployed at the configured address on the current network
+  const isContractDeployed = useCallback(async () => {
+    try {
+      if (!publicClient || !CONTRACT_ADDRESS) return false;
+      const bytecode = await publicClient.getBytecode({ address: CONTRACT_ADDRESS });
+      return !!bytecode;
+    } catch (e) {
+      return false;
+    }
+  }, [publicClient]);
+
   // Wait for transaction confirmation
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
@@ -632,6 +643,11 @@ export const useHealthcareContract = () => {
   const getAllMedicines = useCallback(async () => {
     try {
       if (!publicClient) return [];
+      const deployed = await isContractDeployed();
+      if (!deployed) {
+        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        return [];
+      }
 
       const data = await publicClient.readContract({
         address: CONTRACT_ADDRESS,
@@ -649,6 +665,11 @@ export const useHealthcareContract = () => {
   const getAllDoctors = useCallback(async () => {
     try {
       if (!publicClient) return [];
+      const deployed = await isContractDeployed();
+      if (!deployed) {
+        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        return [];
+      }
 
       const data = await publicClient.readContract({
         address: CONTRACT_ADDRESS,
@@ -666,6 +687,11 @@ export const useHealthcareContract = () => {
   const getAllApprovedDoctors = useCallback(async () => {
     try {
       if (!publicClient) return [];
+      const deployed = await isContractDeployed();
+      if (!deployed) {
+        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        return [];
+      }
 
       const data = await publicClient.readContract({
         address: CONTRACT_ADDRESS,
@@ -683,6 +709,11 @@ export const useHealthcareContract = () => {
   const getAllPatients = useCallback(async () => {
     try {
       if (!publicClient) return [];
+      const deployed = await isContractDeployed();
+      if (!deployed) {
+        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        return [];
+      }
 
       const data = await publicClient.readContract({
         address: CONTRACT_ADDRESS,
@@ -700,6 +731,11 @@ export const useHealthcareContract = () => {
   const getAllAppointments = useCallback(async () => {
     try {
       if (!publicClient) return [];
+      const deployed = await isContractDeployed();
+      if (!deployed) {
+        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        return [];
+      }
 
       const data = await publicClient.readContract({
         address: CONTRACT_ADDRESS,
@@ -718,6 +754,11 @@ export const useHealthcareContract = () => {
     async (userAddress) => {
       try {
         if (!publicClient || !userAddress) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -739,6 +780,11 @@ export const useHealthcareContract = () => {
     async (userAddress) => {
       try {
         if (!publicClient || !userAddress) return null;
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return null;
+        }
 
         // Check if user exists first
         const userExists = await publicClient.readContract({
@@ -770,6 +816,11 @@ export const useHealthcareContract = () => {
   const getContractInfo = useCallback(async () => {
     try {
       if (!publicClient) return null;
+      const deployed = await isContractDeployed();
+      if (!deployed) {
+        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        return null;
+      }
 
       const [
         admin,
@@ -854,6 +905,11 @@ export const useHealthcareContract = () => {
     async (doctorAddress) => {
       try {
         if (!publicClient || !doctorAddress) return null;
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return null;
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -875,6 +931,11 @@ export const useHealthcareContract = () => {
     async (patientAddress) => {
       try {
         if (!publicClient || !patientAddress) return null;
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return null;
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -896,6 +957,11 @@ export const useHealthcareContract = () => {
     async (doctorId) => {
       try {
         if (!publicClient || !doctorId) return null;
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return null;
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -917,6 +983,11 @@ export const useHealthcareContract = () => {
     async (patientId) => {
       try {
         if (!publicClient || !patientId) return null;
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return null;
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -938,6 +1009,11 @@ export const useHealthcareContract = () => {
     async (patientId) => {
       try {
         if (!publicClient || !patientId) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -959,6 +1035,11 @@ export const useHealthcareContract = () => {
     async (doctorId) => {
       try {
         if (!publicClient || !doctorId) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -980,6 +1061,11 @@ export const useHealthcareContract = () => {
     async (patientId) => {
       try {
         if (!publicClient || !patientId) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -1001,6 +1087,11 @@ export const useHealthcareContract = () => {
     async (patientId) => {
       try {
         if (!publicClient || !patientId) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -1022,6 +1113,11 @@ export const useHealthcareContract = () => {
     async (patientId) => {
       try {
         if (!publicClient || !patientId) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
@@ -1043,6 +1139,11 @@ export const useHealthcareContract = () => {
     async (friendAddress, myAddress) => {
       try {
         if (!publicClient || !friendAddress || !myAddress) return [];
+        const deployed = await isContractDeployed();
+        if (!deployed) {
+          toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+          return [];
+        }
 
         const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,

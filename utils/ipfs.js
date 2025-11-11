@@ -16,8 +16,7 @@ class IPFSService {
         );
       }
       
-      // Log JWT status (first 10 chars only for security)
-      console.log("Using Pinata JWT:", this.pinataJWT ? `${this.pinataJWT.substring(0, 10)}...` : "NOT SET");
+      // Do not log JWT to avoid leaking secrets in the browser console
 
       const formData = new FormData();
       formData.append("file", file);
