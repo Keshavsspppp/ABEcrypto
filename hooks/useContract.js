@@ -192,6 +192,80 @@ export const useHealthcareContract = () => {
 
       try {
         setLoading(true);
+
+        // Check if doctor is already registered
+        try {
+          const isRegistered = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "registeredDoctors",
+            args: [doctorAddress],
+          });
+          if (isRegistered) {
+            toast.error("This address is already registered as a doctor");
+            return;
+          }
+        } catch (checkError) {
+          console.warn("Could not check registration status:", checkError);
+        }
+
+        // Get the exact required fee from contract
+        let requiredFee;
+        try {
+          const feeWei = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "registrationDoctorFee",
+          });
+          requiredFee = formatEther(feeWei);
+        } catch (feeError) {
+          console.warn("Could not fetch registration fee:", feeError);
+          requiredFee = registrationFee;
+        }
+
+        // Validate fee matches exactly
+        const feeDifference = Math.abs(parseFloat(requiredFee) - parseFloat(registrationFee));
+        if (feeDifference > 0.0000001) {
+          toast.error(
+            `Registration fee mismatch. Required: ${requiredFee} ETH, Provided: ${registrationFee} ETH`
+          );
+          return;
+        }
+
+        // Estimate gas first to catch revert reasons
+        try {
+          await publicClient.estimateContractGas({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "ADD_DOCTOR",
+            args: [ipfsUrl, doctorAddress, name, userType],
+            value: parseEther(registrationFee.toString()),
+            account: address,
+          });
+        } catch (gasError) {
+          // Extract revert reason from error
+          let errorMessage = "Transaction would fail";
+          if (gasError.message) {
+            if (gasError.message.includes("Incorrect registration fee")) {
+              errorMessage = `Incorrect registration fee. Required: ${requiredFee} ETH`;
+            } else if (gasError.message.includes("already registered")) {
+              errorMessage = "This address is already registered as a doctor";
+            } else if (gasError.message.includes("revert")) {
+              // Try to extract the revert reason
+              const revertMatch = gasError.message.match(/revert\s+(.+)/i);
+              if (revertMatch) {
+                errorMessage = revertMatch[1];
+              } else {
+                errorMessage = gasError.message;
+              }
+            } else {
+              errorMessage = gasError.message;
+            }
+          }
+          toast.error(errorMessage);
+          throw gasError;
+        }
+
         const result = await writeContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
@@ -203,13 +277,30 @@ export const useHealthcareContract = () => {
         return result;
       } catch (error) {
         console.error("Error registering doctor:", error);
-        toast.error("Failed to register doctor");
+        
+        // Extract more specific error messages
+        let errorMessage = "Failed to register doctor";
+        if (error.shortMessage) {
+          if (error.shortMessage.includes("Incorrect registration fee")) {
+            errorMessage = "Registration fee amount is incorrect";
+          } else if (error.shortMessage.includes("already registered")) {
+            errorMessage = "This address is already registered as a doctor";
+          } else if (error.shortMessage.includes("revert")) {
+            errorMessage = error.shortMessage;
+          } else {
+            errorMessage = error.shortMessage;
+          }
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        toast.error(errorMessage);
         throw error;
       } finally {
         setLoading(false);
       }
     },
-    [writeContract, isConnected]
+    [writeContract, isConnected, publicClient, address]
   );
 
   const approveDoctorStatus = useCallback(

@@ -178,6 +178,12 @@ const DoctorRegistration = () => {
         profileImage
       );
 
+      // Validate registration fee is set
+      if (!registrationFee || registrationFee === "0") {
+        toast.error("Registration fee not available. Please refresh the page.");
+        return;
+      }
+
       // Register doctor
       const tx = await registerDoctor(
         ipfsResult.metadataUrl,
@@ -187,13 +193,23 @@ const DoctorRegistration = () => {
         registrationFee
       );
 
-      toast.success(
-        "Registration submitted successfully! Please wait for admin approval."
-      );
-      // router.push("/doctor/dashboard");
+      if (tx) {
+        toast.success(
+          "Registration submitted successfully! Please wait for admin approval."
+        );
+        // Optionally redirect after successful registration
+        // router.push("/doctor/dashboard");
+      }
     } catch (error) {
       console.error("Registration error:", error);
-      toast.error("Registration failed. Please try again.");
+      
+      // Error messages are already handled in registerDoctor
+      // Only show generic message if no specific error was shown
+      if (!error.message?.includes("toast")) {
+        toast.error(
+          error.message || "Registration failed. Please check the console for details."
+        );
+      }
     } finally {
       setLoading(false);
     }
