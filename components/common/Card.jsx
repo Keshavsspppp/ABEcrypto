@@ -1,26 +1,17 @@
 export const Card = ({ children, className = "", padding = "default", variant = "default", hover = true }) => {
-  const paddingClasses = {
-    none: "",
-    small: "p-4",
-    default: "p-6",
-    large: "p-8",
-  };
+  const paddingClasses = { none: "", small: "p-4", default: "p-6", large: "p-8" };
 
   const variantClasses = {
-    default: "bg-white border-gray-200",
-    gradient: "bg-gradient-to-br from-emerald-50/50 via-white to-teal-50/50 border-emerald-200/50",
-    glass: "glass-card border-white/30",
-    elevated: "bg-white border-gray-200 shadow-lg",
+    default: "bg-white border-slate-200",
+    gradient: "bg-gradient-to-br from-brand-50 via-white to-accent-500/5 border-brand-100",
+    glass: "glass-card",
+    elevated: "bg-white border-slate-200 shadow-elevated",
   };
 
-  const hoverClass = hover 
-    ? "transition-all duration-300 ease-out hover:shadow-xl hover:-translate-y-1 hover:border-emerald-300" 
-    : "";
+  const hoverClass = hover ? "transition-all duration-300 ease-out hover:shadow-elevated hover:-translate-y-0.5 hover:border-brand-200" : "";
 
   return (
-    <div
-      className={`rounded-2xl shadow-sm border ${variantClasses[variant]} ${paddingClasses[padding]} ${hoverClass} ${className}`}
-    >
+    <div className={`rounded-2xl ${variantClasses[variant]} ${paddingClasses[padding]} ${hoverClass} ${className}`}>
       {children}
     </div>
   );

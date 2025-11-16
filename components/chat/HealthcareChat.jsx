@@ -307,9 +307,9 @@ const NewChatModal = ({ isOpen, onClose, contacts, onStartChat, userType }) => {
           <div className="max-h-80 overflow-y-auto">
             {filteredContacts.length > 0 ? (
               <div className="space-y-3">
-                {filteredContacts.map((contact) => (
+                {filteredContacts.map((contact, index) => (
                   <div
-                    key={contact.id}
+                    key={`modal-${contact.accountAddress}-${contact.id || index}`}
                     className="p-4 hover:bg-gradient-to-r hover:from-teal-50 hover:to-cyan-50 cursor-pointer rounded-xl border-2 border-teal-200 hover:border-teal-300 hover:shadow-lg transition-all duration-200"
                     onClick={() => {
                       onStartChat(contact);
@@ -504,18 +504,18 @@ const HealthcareChat = () => {
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !selectedContact || sendingMessage) return;
 
+    const tempMessage = {
+      id: `temp-${Date.now()}`,
+      message: messageInput,
+      sender: address,
+      timestamp: Math.floor(Date.now() / 1000),
+      isOwn: true,
+    };
+
     try {
       setSendingMessage(true);
 
       // Add message to local state immediately for better UX
-      const tempMessage = {
-        id: `temp-${Date.now()}`,
-        message: messageInput,
-        sender: address,
-        timestamp: Math.floor(Date.now() / 1000),
-        isOwn: true,
-      };
-
       setMessages((prev) => [...prev, tempMessage]);
       setMessageInput("");
 
@@ -722,16 +722,16 @@ const HealthcareChat = () => {
         {/* Contacts List */}
         <div className="flex-1 overflow-y-auto">
           {filteredContacts.length > 0 ? (
-            filteredContacts.map((contact) => (
+            filteredContacts.map((contact, index) => (
               <ContactCard
-                key={contact.accountAddress}
+                key={`${contact.accountAddress}-${contact.id || index}`}
                 contact={contact}
                 isSelected={
                   selectedContact?.accountAddress === contact.accountAddress
                 }
                 onClick={() => handleContactSelect(contact)}
                 userType={userType}
-                lastMessage={null} // You can implement last message tracking
+                lastMessage={null}
               />
             ))
           ) : (

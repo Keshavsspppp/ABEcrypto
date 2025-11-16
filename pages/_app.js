@@ -26,11 +26,9 @@ function MyApp({ Component, pageProps }) {
           <RainbowKitProvider
             chains={config.chains}
             theme={{
-              blurs: {
-                modalOverlay: "blur(4px)",
-              },
+              blurs: { modalOverlay: "blur(4px)" },
               colors: {
-                accentColor: "#3B82F6",
+                accentColor: "#6366F1",
                 accentColorForeground: "white",
                 actionButtonBorder: "rgba(255, 255, 255, 0.04)",
                 actionButtonBorderMobile: "rgba(255, 255, 255, 0.08)",
@@ -75,9 +73,9 @@ function MyApp({ Component, pageProps }) {
                 modalMobile: "16px",
               },
               shadows: {
-                connectButton: "0 4px 12px 0 rgba(59, 130, 246, 0.15)",
+                connectButton: "0 4px 12px 0 rgba(99, 102, 241, 0.18)",
                 dialog: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-                profileDetailsAction: "0 2px 6px 0 rgba(37, 99, 235, 0.2)",
+                profileDetailsAction: "0 2px 6px 0 rgba(99, 102, 241, 0.2)",
                 selectedOption: "0 2px 6px 0 rgba(0, 0, 0, 0.24)",
                 selectedWallet: "0 2px 6px 0 rgba(0, 0, 0, 0.12)",
                 walletLogo: "0 2px 16px 0 rgba(0, 0, 0, 0.16)",

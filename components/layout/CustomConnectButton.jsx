@@ -19,11 +19,7 @@ const CustomConnectButton = ({ active, childStyle }) => {
           <div
             {...(!ready && {
               "aria-hidden": true,
-              style: {
-                opacity: 0,
-                pointerEvents: "none",
-                userSelect: "none",
-              },
+              style: { opacity: 0, pointerEvents: "none", userSelect: "none" },
             })}
           >
             {(() => {
@@ -31,7 +27,7 @@ const CustomConnectButton = ({ active, childStyle }) => {
                 return (
                   <button
                     onClick={openConnectModal}
-                    className={`flex items-center bg-gradient-to-r from-emerald-500 to-teal-500 text-white  px-4 py-2 rounded-md transition-colors ${childStyle}`}
+                    className={`flex items-center bg-gradient-to-r from-brand-500 to-purple-600 text-white  px-4 py-2 rounded-md transition-colors ${childStyle}`}
                   >
                     <RiWallet3Line className="mr-2" size={20} />
                     CONNECT WALLET
@@ -55,7 +51,7 @@ const CustomConnectButton = ({ active, childStyle }) => {
                   {active && (
                     <button
                       onClick={openChainModal}
-                      className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                      className="bg-gradient-to-r from-brand-500 to-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
                     >
                       {chain.hasIcon && (
                         <div className="w-5 h-5">
@@ -74,7 +70,7 @@ const CustomConnectButton = ({ active, childStyle }) => {
 
                   <button
                     onClick={openAccountModal}
-                    className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                    className="bg-gradient-to-r from-brand-500 to-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
                   >
                     {account.displayName}
                     {account.displayBalance && ` (${account.displayBalance})`}

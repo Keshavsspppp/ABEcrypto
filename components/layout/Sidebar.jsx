@@ -267,13 +267,13 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
   const getRoleColor = () => {
     switch (currentRole) {
       case "admin":
-        return "from-red-500 to-pink-500";
+        return "from-rose-500 to-red-500";
       case "doctor":
-        return "from-teal-500 to-cyan-500";
+        return "from-brand-500 to-purple-600";
       case "patient":
-        return "from-blue-500 to-indigo-500";
+        return "from-accent-500 to-sky-500";
       default:
-        return "from-emerald-500 to-teal-500";
+        return "from-brand-500 to-purple-600";
     }
   };
 
@@ -324,9 +324,8 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
       <div
         className={`fixed inset-y-0 left-0 z-50 w-72 bg-white/95 backdrop-blur-xl shadow-2xl transform ${
           isOpen ? "translate-x-0" : "-translate-x-full "
-        } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 border-r border-gray-200/50`}
+        } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 border-r border-slate-200/60`}
       >
-        {/* Modern Sidebar header */}
         <div
           className={`flex items-center justify-between h-20 px-6 bg-gradient-to-br ${getRoleColor()} relative overflow-hidden shadow-lg`}
         >

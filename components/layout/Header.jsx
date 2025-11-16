@@ -142,36 +142,34 @@ const Header = ({ onMenuClick, userType }) => {
   };
 
   return (
-    <header className="bg-white/90 backdrop-blur-xl shadow-sm border-b border-gray-200/50 sticky top-0 z-30 transition-all duration-300">
-      {/* Modern header accent */}
-      <div className="h-0.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500"></div>
+    <header className="bg-white/90 backdrop-blur-xl shadow-sm border-b border-slate-200/60 sticky top-0 z-30 transition-all duration-300">
+      <div className="accent-divider"></div>
 
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Left section - Enhanced */}
+          {/* Left section */}
           <div className="flex items-center">
             <button
               onClick={onMenuClick}
-              className="p-2.5 rounded-xl text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 lg:hidden transition-all duration-200 transform hover:scale-105 active:scale-95"
+              className="p-2.5 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 lg:hidden transition-all duration-200 transform hover:scale-105 active:scale-95"
             >
               <FiMenu className="h-6 w-6" />
             </button>
-
-            {/* Modern Logo */}
+            {/* Logo */}
             <div className="flex items-center ml-4 lg:ml-0">
               <div className="flex items-center space-x-3">
-                <div className="relative p-2.5 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 rounded-2xl shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300 transform hover:scale-105">
+                <div className="relative p-2.5 bg-gradient-to-br from-brand-500 via-purple-600 to-accent-500 rounded-2xl shadow-elevated hover:shadow-glow-lg transition-all duration-300 transform hover:scale-105">
                   <MdLocalHospital className="h-6 w-6 text-white" />
-                  <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 rounded-full border-2 border-white animate-pulse"></div>
+                  <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-brand-400 rounded-full border-2 border-white animate-pulse"></div>
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent flex items-center gap-2">
-                    HealthChain
-                    <MdBiotech className="h-5 w-5 text-emerald-600" />
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent flex items-center gap-2">
+                    MediChain
+                    <MdBiotech className="h-5 w-5 text-brand-600" />
                   </h1>
-                  <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                    <MdSecurityUpdate className="h-3 w-3 text-emerald-500" />
-                    Decentralized Healthcare Platform
+                  <p className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                    <MdSecurityUpdate className="h-3 w-3 text-brand-500" />
+                    Decentralized Platform
                   </p>
                 </div>
               </div>
