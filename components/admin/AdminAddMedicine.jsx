@@ -489,132 +489,81 @@ const AdminAddMedicine = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 space-y-8 relative">
-      {/* Medical Background Elements */}
-      <div className="absolute inset-0 opacity-5 overflow-hidden pointer-events-none">
-        <FaPrescriptionBottleAlt className="absolute top-20 right-20 h-32 w-32 text-purple-600 animate-pulse" />
-        <FaStethoscope className="absolute bottom-20 left-20 h-24 w-24 text-indigo-600" />
-        <MdMedication className="absolute top-1/2 left-1/4 h-28 w-28 text-blue-600 animate-pulse animation-delay-2000" />
+    <div className="space-y-8 relative">
+      {/* Action Bar - Moved to Top */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border-2 border-purple-200 shadow-lg">
+        <div className="flex items-center space-x-4">
+          <Button
+            variant="outline"
+            size="small"
+            onClick={() => router.push("/admin/dashboard")}
+            className="border-2 border-purple-300 text-purple-700 hover:bg-purple-50 shadow-md"
+          >
+            <FiArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/admin/medicines")}
+            className="border-2 border-indigo-300 text-indigo-700 hover:bg-indigo-50 shadow-md"
+          >
+            <FiPackage className="h-4 w-4 mr-2" />
+            View Medicines
+          </Button>
+        </div>
+        <div className="flex items-center space-x-3">
+          <Button
+            variant="outline"
+            onClick={resetForm}
+            disabled={saving}
+            className="border-2 border-gray-300 text-gray-700 hover:bg-gray-50 shadow-md"
+          >
+            <FiX className="h-4 w-4 mr-2" />
+            Reset
+          </Button>
+          <Button
+            onClick={handleAddMedicine}
+            loading={saving}
+            disabled={saving || !isConnected || Object.keys(formErrors).length > 0}
+            className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-lg px-6"
+          >
+            {saving ? (
+              <>
+                <LoadingSpinner size="small" color="white" />
+                <span className="ml-2">Adding...</span>
+              </>
+            ) : (
+              <>
+                <FiSave className="h-4 w-4 mr-2" />
+                Add Medicine
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* Enhanced Header */}
-      <div className="bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 rounded-2xl p-8 text-white shadow-2xl border-2 border-purple-200 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full transform translate-x-16 -translate-y-16"></div>
-        <div className="absolute bottom-0 left-0 w-24 h-24 bg-white opacity-10 rounded-full transform -translate-x-12 translate-y-12"></div>
-
-        <div className="flex items-center justify-between mb-6 relative z-10">
-          <div className="flex items-center space-x-6">
-            <Button
-              variant="outline"
-              size="small"
-              onClick={() => router.push("/admin/dashboard")}
-              className="bg-white bg-opacity-20 border-white border-opacity-30 text-white hover:bg-opacity-30 backdrop-blur-sm shadow-lg"
-            >
-              <FiArrowLeft className="h-4 w-4 mr-2" />
-              Back to Medicines
-            </Button>
-            <div className="flex items-center space-x-4">
-              <div className="p-4 bg-white bg-opacity-20 rounded-2xl backdrop-blur-sm border border-white border-opacity-30 shadow-lg">
-                <FaPrescriptionBottleAlt className="h-10 w-10" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-                  Add New Medicine
-                  <MdMedication className="h-8 w-8" />
-                </h1>
-                <p className="text-purple-100 text-lg flex items-center gap-2">
-                  <MdAdminPanelSettings className="h-4 w-4" />
-                  Add pharmaceutical products to the healthcare platform
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            <Button
-              variant="outline"
-              onClick={resetForm}
-              disabled={saving}
-              className="bg-white bg-opacity-20 border-white border-opacity-30 text-white hover:bg-opacity-30 backdrop-blur-sm shadow-lg"
-            >
-              <FiX className="h-4 w-4 mr-2" />
-              Reset Form
-            </Button>
-            <Button
-              onClick={handleAddMedicine}
-              loading={saving}
-              disabled={saving || !isConnected}
-              className="bg-white bg-opacity-20 border-white border-opacity-30 text-white hover:bg-opacity-30 backdrop-blur-sm shadow-lg"
-            >
-              {saving ? (
-                <>
-                  <LoadingSpinner size="small" color="white" />
-                  <span className="ml-2">Adding Medicine...</span>
-                </>
-              ) : (
-                <>
-                  <FiSave className="h-4 w-4 mr-2" />
-                  Add Medicine
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Enhanced Admin Info */}
-        <Card className="bg-white bg-opacity-10 border-white border-opacity-20 backdrop-blur-sm shadow-lg relative z-10">
+      {/* Connection Warning */}
+      {!isConnected && (
+        <Card className="bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 shadow-lg">
           <div className="p-6">
             <div className="flex items-center space-x-4">
-              <div className="p-3 bg-gradient-to-r from-purple-400 to-indigo-400 rounded-2xl shadow-lg">
-                <MdAdminPanelSettings className="h-8 w-8 text-white" />
+              <div className="p-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl shadow-lg">
+                <FiAlertCircle className="h-8 w-8 text-white" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-                  <MdSecurity className="h-5 w-5" />
-                  Admin Panel - Medicine Management
+                <h3 className="text-lg font-bold text-red-900 mb-1">
+                  Wallet Not Connected
                 </h3>
-                <p className="text-purple-100 font-medium">
-                  {isConnected ? (
-                    <>
-                      Logged in as Admin • {truncateAddress(address)} • Total
-                      Medicines: {contractInfo?.medicineCount || 0}
-                    </>
-                  ) : (
-                    <>Please connect your wallet to continue</>
-                  )}
+                <p className="text-red-700">
+                  Please connect your wallet to add medicines to the platform.
                 </p>
-              </div>
-              <div className="ml-auto">
-                <Badge className="bg-gradient-to-r from-emerald-500 to-green-500 text-white border-none shadow-md">
-                  <MdVerifiedUser className="w-4 h-4 mr-1" />
-                  Admin Access
-                </Badge>
               </div>
             </div>
           </div>
         </Card>
+      )}
 
-        {/* Connection Warning */}
-        {!isConnected && (
-          <Card className="bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 shadow-lg mt-6 relative z-10">
-            <div className="p-6">
-              <div className="flex items-center space-x-4">
-                <div className="p-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl shadow-lg">
-                  <FiAlertCircle className="h-8 w-8 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-red-900 mb-1">
-                    Wallet Not Connected
-                  </h3>
-                  <p className="text-red-700">
-                    Please connect your wallet to add medicines to the platform.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </Card>
-        )}
-      </div>
-
+      {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Enhanced Main Form */}
         <div className="lg:col-span-2 space-y-8">
@@ -1427,28 +1376,28 @@ const AdminAddMedicine = () => {
         </div>
       </div>
 
-      {/* Enhanced Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-white to-gray-50 border-t-2 border-gray-200 p-4 shadow-2xl z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      {/* Form Status Footer */}
+      <div className="bg-gradient-to-r from-gray-50 to-slate-50 rounded-xl border-2 border-gray-200 p-6 shadow-lg">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <Badge
+            className={`text-sm px-4 py-2 border-none shadow-lg ${
+              Object.keys(formErrors).length === 0
+                ? "bg-gradient-to-r from-emerald-500 to-green-500 text-white"
+                : "bg-gradient-to-r from-red-500 to-pink-500 text-white"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {Object.keys(formErrors).length === 0 ? (
+                <FiCheckCircle className="w-4 h-4" />
+              ) : (
+                <FiAlertCircle className="w-4 h-4" />
+              )}
+              {Object.keys(formErrors).length === 0
+                ? "Form Valid - Ready to Submit"
+                : `${Object.keys(formErrors).length} Error(s) Found`}
+            </div>
+          </Badge>
           <div className="flex items-center space-x-6">
-            <Badge
-              className={`text-sm px-4 py-2 border-none shadow-lg ${
-                Object.keys(formErrors).length === 0
-                  ? "bg-gradient-to-r from-emerald-500 to-green-500 text-white"
-                  : "bg-gradient-to-r from-red-500 to-pink-500 text-white"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {Object.keys(formErrors).length === 0 ? (
-                  <FiCheckCircle className="w-4 h-4" />
-                ) : (
-                  <FiAlertCircle className="w-4 h-4" />
-                )}
-                {Object.keys(formErrors).length === 0
-                  ? "Form Valid"
-                  : `${Object.keys(formErrors).length} Errors`}
-              </div>
-            </Badge>
             <div className="bg-white rounded-xl px-4 py-2 border-2 border-purple-200 shadow-md">
               <span className="text-sm font-bold text-purple-600 flex items-center gap-2">
                 <FiDollarSign className="h-4 w-4" />
@@ -1462,42 +1411,15 @@ const AdminAddMedicine = () => {
                   : "0 ETH"}
               </span>
             </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="outline"
-              onClick={() => router.push("/admin/medicines")}
-              disabled={saving}
-              className="border-2 border-gray-300 hover:bg-gray-50 shadow-md"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAddMedicine}
-              loading={saving}
-              disabled={
-                saving || Object.keys(formErrors).length > 0 || !isConnected
-              }
-              className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 shadow-lg px-8"
-            >
-              {saving ? (
-                <div className="flex items-center space-x-2">
-                  <LoadingSpinner size="small" color="white" />
-                  <span>Adding Medicine...</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <FiSave className="h-4 w-4" />
-                  <span>Add Medicine</span>
-                </div>
-              )}
-            </Button>
+            <div className="bg-white rounded-xl px-4 py-2 border-2 border-indigo-200 shadow-md">
+              <span className="text-sm font-bold text-indigo-600 flex items-center gap-2">
+                <FaPrescriptionBottleAlt className="h-4 w-4" />
+                Total Medicines: {contractInfo?.medicineCount || 0}
+              </span>
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Bottom spacer to account for fixed action bar */}
-      <div className="h-24"></div>
     </div>
   );
 };

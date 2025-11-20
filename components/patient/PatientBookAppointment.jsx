@@ -582,12 +582,11 @@ const PatientBookAppointment = () => {
 
       console.log("Booking result:", result);
 
-      toast.success("Appointment booked successfully!");
-
-      // Wait a bit for the transaction to be processed
+      // Transaction is already confirmed by this point (bookAppointment waits for confirmation)
+      // Redirect with refresh parameter so dashboard will refresh data
       setTimeout(() => {
-        router.push("/patient/dashboard");
-      }, 2000);
+        router.push("/patient/dashboard?refresh=true");
+      }, 1000);
     } catch (error) {
       console.error("Error booking appointment:", error);
 

@@ -178,6 +178,14 @@ const DoctorRegistration = () => {
         profileImage
       );
 
+      // Validate IPFS upload was successful
+      if (!ipfsResult || !ipfsResult.metadataUrl) {
+        toast.error("Failed to upload profile to IPFS. Please try again.");
+        return;
+      }
+
+      console.log("IPFS upload result:", ipfsResult);
+
       // Validate registration fee is set
       if (!registrationFee || registrationFee === "0") {
         toast.error("Registration fee not available. Please refresh the page.");

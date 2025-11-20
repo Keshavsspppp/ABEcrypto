@@ -100,26 +100,42 @@ const AdminDashboard = () => {
       try {
         setLoading(true);
 
-        // Fetch all admin data
-        const [
-          contractData,
-          allDoctors,
-          allPatients,
-          allMedicines,
-          allAppointments,
-        ] = await Promise.all([
-          getContractInfo(),
-          getAllDoctors(),
-          getAllPatients(),
-          getAllMedicines(),
-          getAllAppointments(),
+        // Fetch all admin data with Promise.allSettled to handle individual failures gracefully
+        const results = await Promise.allSettled([
+          getContractInfo().catch((err) => {
+            console.warn("Failed to fetch contract info:", err.message);
+            return null;
+          }),
+          getAllDoctors().catch((err) => {
+            console.warn("Failed to fetch doctors:", err.message);
+            return [];
+          }),
+          getAllPatients().catch((err) => {
+            console.warn("Failed to fetch patients:", err.message);
+            return [];
+          }),
+          getAllMedicines().catch((err) => {
+            console.warn("Failed to fetch medicines:", err.message);
+            return [];
+          }),
+          getAllAppointments().catch((err) => {
+            console.warn("Failed to fetch appointments:", err.message);
+            return [];
+          }),
         ]);
 
+        // Extract values from Promise.allSettled results
+        const contractData = results[0].status === "fulfilled" ? results[0].value : null;
+        const allDoctors = results[1].status === "fulfilled" ? (results[1].value || []) : [];
+        const allPatients = results[2].status === "fulfilled" ? (results[2].value || []) : [];
+        const allMedicines = results[3].status === "fulfilled" ? (results[3].value || []) : [];
+        const allAppointments = results[4].status === "fulfilled" ? (results[4].value || []) : [];
+
         setContractInfo(contractData);
-        setDoctors(allDoctors || []);
-        setPatients(allPatients || []);
-        setMedicines(allMedicines || []);
-        setAppointments(allAppointments || []);
+        setDoctors(allDoctors);
+        setPatients(allPatients);
+        setMedicines(allMedicines);
+        setAppointments(allAppointments);
 
         // Calculate stats
         const approvedDoctors =
@@ -142,7 +158,8 @@ const AdminDashboard = () => {
           activeAppointments,
         });
       } catch (error) {
-        console.error("Error fetching admin data:", error);
+        // Only log critical errors, not contract call failures
+        console.error("Critical error in admin dashboard:", error);
       } finally {
         setLoading(false);
       }

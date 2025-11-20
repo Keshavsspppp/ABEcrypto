@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import {
   FiSend,
   FiUser,
+  FiUsers,
   FiSearch,
   FiPhone,
   FiVideo,
@@ -140,8 +141,9 @@ const ContactCard = ({
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-bold text-gray-900 truncate">
               {contactData?.name ||
+                contact.displayName ||
                 contact.name ||
-                `${contact.userType} #${contact.id}`}
+                `${contact.userType} #${contact.id || ""}`}
             </h3>
             <span className="text-xs text-gray-500 font-medium">
               {lastMessage?.timestamp
@@ -173,10 +175,18 @@ const ContactCard = ({
             </div>
           </div>
 
-          {lastMessage && (
-            <p className="text-sm text-gray-600 truncate">
-              {lastMessage.sender === userType ? "You: " : ""}
-              {lastMessage.message}
+          {lastMessage ? (
+            <p className="text-sm text-gray-600 truncate flex items-center gap-1">
+              {lastMessage.isOwn ? (
+                <span className="text-teal-600 font-semibold">You:</span>
+              ) : (
+                <span className="text-gray-500 font-semibold">Them:</span>
+              )}
+              <span>{lastMessage.message}</span>
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400 italic">
+              No messages exchanged yet
             </p>
           )}
         </div>
@@ -332,10 +342,14 @@ const NewChatModal = ({ isOpen, onClose, contacts, onStartChat, userType }) => {
                       </div>
                       <div className="flex-1">
                         <p className="text-sm font-bold text-gray-900">
-                          {contact.name || `${contact.userType} #${contact.id}`}
+                          {contact.displayName ||
+                            contact.name ||
+                            `${contact.userType} #${contact.id}`}
                         </p>
                         <p className="text-xs text-gray-500 font-medium">
-                          {truncateAddress(contact.accountAddress)}
+                          {contact.accountAddress
+                            ? truncateAddress(contact.accountAddress)
+                            : "Address N/A"}
                         </p>
                         <Badge
                           className={`text-xs mt-2 ${
@@ -377,6 +391,8 @@ const HealthcareChat = () => {
   const [messageInput, setMessageInput] = useState("");
   const [contacts, setContacts] = useState([]);
   const [allContacts, setAllContacts] = useState([]);
+  const [contactsMap, setContactsMap] = useState({});
+  const [lastMessages, setLastMessages] = useState({});
   const [loading, setLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -401,6 +417,52 @@ const HealthcareChat = () => {
     getPatientDetails,
     getUserType,
   } = useHealthcareContract();
+
+  const normalizeContact = (contact, typeOverride = null) => {
+    if (!contact) return null;
+    const rawAddress = contact.accountAddress || contact.pubkey || "";
+    const addressKey = rawAddress.toLowerCase();
+
+    return {
+      ...contact,
+      accountAddress: rawAddress,
+      accountAddressKey: addressKey,
+      userType: typeOverride || contact.userType || "patient",
+      name:
+        contact.name ||
+        (typeOverride === "doctor"
+          ? `Dr. ${contact.id || ""}`.trim()
+          : `Patient #${contact.id || ""}`.trim()),
+      displayName:
+        contact.name ||
+        (typeOverride === "doctor"
+          ? `Dr. ${contact.id || ""}`.trim()
+          : contact.id
+          ? `Patient #${contact.id}`
+          : "Healthcare User"),
+    };
+  };
+
+  const enrichFriends = (friendsList = [], map = {}) => {
+    return friendsList
+      .map((friend) => {
+        const friendAddress = friend.pubkey?.toLowerCase();
+        const match = map[friendAddress];
+        if (match) {
+          return match;
+        }
+
+        return {
+          accountAddress: friend.pubkey,
+          accountAddressKey: friendAddress,
+          name: friend.name || "Healthcare User",
+          displayName: friend.name || "Healthcare User",
+          userType: "patient",
+          id: null,
+        };
+      })
+      .filter(Boolean);
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -448,18 +510,32 @@ const HealthcareChat = () => {
           getAllPatients(),
         ]);
 
-        // Combine all potential contacts (excluding current user)
-        const potentialContacts = [
-          ...(allDoctors || []).filter(
-            (doc) => doc.accountAddress.toLowerCase() !== address.toLowerCase()
-          ),
-          ...(allPatients || []).filter(
-            (pat) => pat.accountAddress.toLowerCase() !== address.toLowerCase()
-          ),
-        ];
+        const normalizedDoctors = (allDoctors || [])
+          .filter(
+            (doc) =>
+              doc.accountAddress?.toLowerCase() !== address.toLowerCase()
+          )
+          .map((doc) => normalizeContact(doc, "doctor"));
 
+        const normalizedPatients = (allPatients || [])
+          .filter(
+            (pat) =>
+              pat.accountAddress?.toLowerCase() !== address.toLowerCase()
+          )
+          .map((pat) => normalizeContact(pat, "patient"));
+
+        const potentialContacts = [...normalizedDoctors, ...normalizedPatients];
+
+        const map = potentialContacts.reduce((acc, contact) => {
+          if (contact?.accountAddressKey) {
+            acc[contact.accountAddressKey] = contact;
+          }
+          return acc;
+        }, {});
+
+        setContactsMap(map);
         setAllContacts(potentialContacts);
-        setContacts(friendsList || []);
+        setContacts(enrichFriends(friendsList, map));
       } catch (error) {
         console.error("Error initializing chat:", error);
         toast.error("Failed to load chat data");
@@ -473,6 +549,10 @@ const HealthcareChat = () => {
 
   const loadMessages = async (contact) => {
     try {
+      if (!contact?.accountAddress) {
+        toast.error("Contact address missing");
+        return;
+      }
       const chatMessages = await getChatMessages(
         contact.accountAddress,
         address
@@ -490,6 +570,12 @@ const HealthcareChat = () => {
       }));
 
       setMessages(formattedMessages);
+      setLastMessages((prev) => ({
+        ...prev,
+        [contact.accountAddressKey || contact.accountAddress]: formattedMessages[
+          formattedMessages.length - 1
+        ] || null,
+      }));
     } catch (error) {
       console.error("Error loading messages:", error);
       toast.error("Failed to load messages");
@@ -517,6 +603,12 @@ const HealthcareChat = () => {
 
       // Add message to local state immediately for better UX
       setMessages((prev) => [...prev, tempMessage]);
+      setLastMessages((prev) => ({
+        ...prev,
+        [selectedContact.accountAddressKey ||
+        selectedContact.accountAddress?.toLowerCase()]:
+          tempMessage,
+      }));
       setMessageInput("");
 
       // Send message to blockchain
@@ -536,25 +628,38 @@ const HealthcareChat = () => {
   };
 
   const handleStartNewChat = async (contact) => {
-    // Add to friends list locally and start chat
+    const normalized =
+      contact.accountAddressKey || contact.accountAddress
+        ? contact
+        : normalizeContact(contact, contact.userType);
+
+    setContactsMap((prev) => ({
+      ...prev,
+      [normalized.accountAddressKey ||
+      normalized.accountAddress?.toLowerCase()]:
+        normalized,
+    }));
+
     setContacts((prev) => {
       const exists = prev.some(
-        (c) => c.accountAddress === contact.accountAddress
+        (c) =>
+          c.accountAddress?.toLowerCase() ===
+          normalized.accountAddress?.toLowerCase()
       );
       if (!exists) {
-        return [...prev, contact];
+        return [...prev, normalized];
       }
       return prev;
     });
 
-    await handleContactSelect(contact);
+    await handleContactSelect(normalized);
   };
 
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
       const friendsList = await getFriendsList(address);
-      setContacts(friendsList || []);
+      setContacts(enrichFriends(friendsList || [], contactsMap));
 
       if (selectedContact) {
         await loadMessages(selectedContact);
@@ -571,10 +676,16 @@ const HealthcareChat = () => {
 
   const filteredContacts = contacts.filter((contact) => {
     const searchLower = searchTerm.toLowerCase();
+    const label = (
+      contact.displayName ||
+      contact.name ||
+      contact.userType ||
+      ""
+    ).toLowerCase();
     return (
-      contact.name?.toLowerCase().includes(searchLower) ||
+      label.includes(searchLower) ||
       contact.id?.toString().includes(searchLower) ||
-      contact.accountAddress.toLowerCase().includes(searchLower)
+      contact.accountAddress?.toLowerCase().includes(searchLower)
     );
   });
 
@@ -719,19 +830,52 @@ const HealthcareChat = () => {
           </div>
         )}
 
+        <div className="grid grid-cols-3 gap-2 px-4 py-3 bg-white border-b border-gray-100">
+          <div className="p-3 rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white shadow-sm">
+            <p className="text-xs text-gray-500 flex items-center gap-1 font-medium">
+              <FiUsers className="h-3 w-3 text-teal-500" />
+              Connections
+            </p>
+            <p className="text-lg font-bold text-gray-900">{contacts.length}</p>
+          </div>
+          <div className="p-3 rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white shadow-sm">
+            <p className="text-xs text-gray-500 flex items-center gap-1 font-medium">
+              <FiMessageCircle className="h-3 w-3 text-blue-500" />
+              Messages
+            </p>
+            <p className="text-lg font-bold text-gray-900">
+              {messages.length}
+            </p>
+          </div>
+          <div className="p-3 rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white shadow-sm">
+            <p className="text-xs text-gray-500 flex items-center gap-1 font-medium">
+              <MdHealthAndSafety className="h-3 w-3 text-emerald-500" />
+              Status
+            </p>
+            <p className="text-sm font-bold text-emerald-600">
+              {selectedContact ? "Active chat" : "Waiting"}
+            </p>
+          </div>
+        </div>
+
         {/* Contacts List */}
         <div className="flex-1 overflow-y-auto">
           {filteredContacts.length > 0 ? (
             filteredContacts.map((contact, index) => (
               <ContactCard
-                key={`${contact.accountAddress}-${contact.id || index}`}
+                key={`${contact.accountAddress || contact.accountAddressKey}-${contact.id || index}`}
                 contact={contact}
                 isSelected={
                   selectedContact?.accountAddress === contact.accountAddress
                 }
                 onClick={() => handleContactSelect(contact)}
                 userType={userType}
-                lastMessage={null}
+                lastMessage={
+                  lastMessages[
+                    contact.accountAddressKey ||
+                      contact.accountAddress?.toLowerCase()
+                  ]
+                }
               />
             ))
           ) : (
@@ -782,7 +926,8 @@ const HealthcareChat = () => {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">
-                      {selectedContact.name ||
+                      {selectedContact.displayName ||
+                        selectedContact.name ||
                         `${selectedContact.userType} #${selectedContact.id}`}
                     </h2>
                     <p className="text-sm text-blue-600 font-medium flex items-center gap-2">

@@ -25,6 +25,8 @@ import {
   FiArrowLeft,
   FiShield,
   FiInfo,
+  FiShare2,
+  FiCopy,
 } from "react-icons/fi";
 import {
   MdVerifiedUser,
@@ -58,10 +60,11 @@ import {
   FaBone,
   FaLungs,
 } from "react-icons/fa";
-import { Card, Button, Input, Select, Badge } from "../common";
+import { Card, Button, Input, Select, Badge, Modal } from "../common";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useHealthcareContract } from "../../hooks/useContract";
 import ipfsService from "../../utils/ipfs";
+import abeEncryption from "../../utils/encryption";
 import {
   truncateAddress,
   formatDate,
@@ -256,7 +259,7 @@ const AppointmentCard = ({ appointment, doctors, onViewDetails }) => {
   );
 };
 
-const MedicalHistoryCard = ({ record, index }) => {
+const MedicalHistoryCard = ({ record, index, onShareAccess }) => {
   return (
     <div className="bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
       <div className="p-6">
@@ -283,6 +286,17 @@ const MedicalHistoryCard = ({ record, index }) => {
               </p>
             </div>
           </div>
+        </div>
+        <div className="flex justify-end mt-4">
+          <Button
+            variant="outline"
+            size="small"
+            onClick={() => onShareAccess(record, index)}
+            className="border-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+          >
+            <FiShare2 className="h-4 w-4 mr-2" />
+            Manage Access
+          </Button>
         </div>
       </div>
     </div>
@@ -410,6 +424,18 @@ const PatientHistory = () => {
   const [medicines, setMedicines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [patientData, setPatientData] = useState(null);
+  const [patientIdValue, setPatientIdValue] = useState(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareRecord, setShareRecord] = useState(null);
+  const [shareRecordIndex, setShareRecordIndex] = useState(null);
+  const [shareDoctorId, setShareDoctorId] = useState("");
+  const [shareSpecialty, setShareSpecialty] = useState("");
+  const [shareAccessLevel, setShareAccessLevel] = useState("read");
+  const [shareAllowAdmin, setShareAllowAdmin] = useState(true);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [shareError, setShareError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -452,6 +478,8 @@ const PatientHistory = () => {
           router.push("/patient/register");
           return;
         }
+        const patientIdNumber = safeNumberConversion(patientId);
+        setPatientIdValue(patientIdNumber);
 
         const [
           patientDetails,
@@ -540,6 +568,153 @@ const PatientHistory = () => {
   const handleExportHistory = () => {
     // Implement export functionality
     toast.info("Export functionality coming soon!");
+  };
+
+  const handleOpenShareAccess = (record, index) => {
+    setShareRecord(record);
+    setShareRecordIndex(index);
+    setShareDoctorId("");
+    setShareSpecialty("");
+    setShareAccessLevel("read");
+    setShareAllowAdmin(true);
+    setShareLink("");
+    setShareError("");
+    setShareCopied(false);
+    setShareModalOpen(true);
+  };
+
+  const closeShareModal = () => {
+    setShareModalOpen(false);
+    setShareRecord(null);
+    setShareRecordIndex(null);
+  };
+
+  const handleShareAccess = async () => {
+    if (!shareRecord) {
+      toast.error("No medical record selected");
+      return;
+    }
+    if (!shareDoctorId) {
+      toast.error("Please select a doctor to share with");
+      return;
+    }
+    if (!patientIdValue) {
+      toast.error("Patient identifier missing");
+      return;
+    }
+
+    try {
+      setShareLoading(true);
+      setShareError("");
+      setShareLink("");
+
+      const doctorIdNumber = Number(shareDoctorId);
+
+      const patientCondition = {
+        type: "AND",
+        conditions: [
+          { attribute: "role", operator: "===", value: "patient" },
+          {
+            attribute: "patientId",
+            operator: "===",
+            value: patientIdValue,
+          },
+        ],
+      };
+
+      const doctorCondition = {
+        type: "AND",
+        conditions: [
+          { attribute: "role", operator: "===", value: "doctor" },
+          { attribute: "doctorId", operator: "===", value: doctorIdNumber },
+        ],
+      };
+
+      if (shareSpecialty.trim()) {
+        doctorCondition.conditions.push({
+          attribute: "specialty",
+          operator: "===",
+          value: shareSpecialty.trim().toLowerCase(),
+        });
+      }
+
+      if (shareAccessLevel) {
+        doctorCondition.conditions.push({
+          attribute: "accessLevel",
+          operator: "===",
+          value: shareAccessLevel,
+        });
+      }
+
+      const orConditions = [patientCondition, doctorCondition];
+
+      if (shareAllowAdmin) {
+        orConditions.push({
+          attribute: "role",
+          operator: "===",
+          value: "admin",
+        });
+      }
+
+      const accessPolicy = {
+        type: "OR",
+        conditions: orConditions,
+      };
+
+      const encryptedPackage = await abeEncryption.encrypt(
+        {
+          entry: shareRecord,
+          recordIndex: shareRecordIndex,
+          patientId: patientIdValue,
+          sharedBy: address?.toLowerCase(),
+          sharedAt: new Date().toISOString(),
+          allowedDoctorId: doctorIdNumber,
+          specialtyRequirement: shareSpecialty.trim() || null,
+          accessLevelRequirement: shareAccessLevel,
+        },
+        accessPolicy
+      );
+
+      const metadataName = `shared-record-${
+        patientIdValue || "patient"
+      }-${(shareRecordIndex ?? 0) + 1}`;
+
+      const uploadResult = await ipfsService.uploadJSONToIPFS(
+        encryptedPackage,
+        {
+          name: metadataName,
+          type: "patient-shared-record",
+          keyvalues: {
+            patientId: String(patientIdValue || ""),
+            doctorId: String(doctorIdNumber),
+          },
+        }
+      );
+
+      setShareLink(uploadResult.url);
+      toast.success("Encrypted share link created");
+    } catch (error) {
+      console.error("Error sharing record:", error);
+      setShareError(error.message || "Failed to share record");
+      toast.error("Failed to share record");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!shareLink) return;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(shareLink);
+        setShareCopied(true);
+        toast.success("Share link copied");
+        setTimeout(() => setShareCopied(false), 1500);
+      }
+    } catch (error) {
+      console.error("Clipboard error:", error);
+      toast.error("Unable to copy link");
+    }
   };
 
   // Filter appointments based on search and filters
@@ -655,7 +830,8 @@ const PatientHistory = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto py-8 px-4 relative">
+    <>
+      <div className="max-w-6xl mx-auto py-8 px-4 relative">
       {/* Medical Background Elements */}
       <div className="absolute inset-0 opacity-5 overflow-hidden">
         <MdHistory className="absolute top-20 right-20 h-32 w-32 text-teal-600 animate-pulse" />
@@ -936,7 +1112,12 @@ const PatientHistory = () => {
           {medicalHistory.length > 0 ? (
             <div className="space-y-6">
               {medicalHistory.map((record, index) => (
-                <MedicalHistoryCard key={index} record={record} index={index} />
+                <MedicalHistoryCard
+                  key={index}
+                  record={record}
+                  index={index}
+                  onShareAccess={handleOpenShareAccess}
+                />
               ))}
             </div>
           ) : (
@@ -1011,6 +1192,142 @@ const PatientHistory = () => {
         </div>
       )}
     </div>
+      <Modal
+        isOpen={shareModalOpen}
+        onClose={closeShareModal}
+        title="Share Medical Record Access"
+        size="large"
+      >
+        <div className="space-y-5">
+          <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-700">
+            Choose the attributes a doctor must satisfy to decrypt this record.
+            We will re-encrypt the selected entry with the hybrid AES + ABE
+            policy you define and store it on IPFS for secure sharing.
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Select Doctor
+            </label>
+            <Select
+              value={shareDoctorId}
+              onChange={(e) => {
+                const value = e.target.value;
+                setShareDoctorId(value);
+                const selected = doctors.find(
+                  (doc) => String(doc.id) === value
+                );
+                if (selected?.specialization) {
+                  setShareSpecialty(selected.specialization);
+                }
+              }}
+              className="border-2 border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500"
+            >
+              <option value="">Select a doctor</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.name
+                    ? `Dr. ${doctor.name} (#${doctor.id})`
+                    : `Doctor #${doctor.id}`}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                Required Specialty / Attribute
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g. cardiology"
+                value={shareSpecialty}
+                onChange={(e) => setShareSpecialty(e.target.value)}
+                className="border-2 border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Optional – leave blank to allow any specialty.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                Required Access Level
+              </label>
+              <Select
+                value={shareAccessLevel}
+                onChange={(e) => setShareAccessLevel(e.target.value)}
+                className="border-2 border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500"
+              >
+                <option value="read">Read only</option>
+                <option value="write">Write</option>
+                <option value="full">Full</option>
+              </Select>
+            </div>
+          </div>
+
+          <label className="flex items-center space-x-3 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={shareAllowAdmin}
+              onChange={(e) => setShareAllowAdmin(e.target.checked)}
+              className="w-4 h-4 text-emerald-600 border-gray-300 rounded"
+            />
+            <span>Allow admin override (recommended for audit access)</span>
+          </label>
+
+          {shareError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600">
+              {shareError}
+            </div>
+          )}
+
+          {shareLink && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200">
+              <p className="text-sm font-semibold text-emerald-700 mb-2 flex items-center gap-2">
+                <FiShield className="h-4 w-4" />
+                Encrypted Share Link
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-white rounded-lg border border-emerald-200 px-3 py-2 text-xs break-all">
+                  {shareLink}
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleCopyShareLink}
+                  className="border-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                >
+                  {shareCopied ? (
+                    <FiCheck className="h-4 w-4" />
+                  ) : (
+                    <FiCopy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={closeShareModal}
+              className="border-2 border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleShareAccess}
+              loading={shareLoading}
+              disabled={shareLoading || doctors.length === 0}
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+            >
+              {shareLoading ? "Encrypting..." : "Create Share Link"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 };
 

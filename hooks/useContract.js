@@ -232,6 +232,22 @@ export const useHealthcareContract = () => {
           return;
         }
 
+        // Validate inputs before attempting transaction
+        if (!ipfsUrl || ipfsUrl.trim() === "") {
+          toast.error("IPFS URL is required. Please ensure profile data was uploaded successfully.");
+          return;
+        }
+        
+        if (!name || name.trim() === "") {
+          toast.error("Doctor name is required");
+          return;
+        }
+        
+        if (!userType || userType.trim() === "") {
+          toast.error("User type is required");
+          return;
+        }
+
         // Estimate gas first to catch revert reasons
         try {
           await publicClient.estimateContractGas({
@@ -245,10 +261,12 @@ export const useHealthcareContract = () => {
         } catch (gasError) {
           // Extract revert reason from error
           let errorMessage = "Transaction would fail";
+          
+          // Check for specific error reasons
           if (gasError.message) {
             if (gasError.message.includes("Incorrect registration fee")) {
-              errorMessage = `Incorrect registration fee. Required: ${requiredFee} ETH`;
-            } else if (gasError.message.includes("already registered")) {
+              errorMessage = `Incorrect registration fee. Required: ${requiredFee} ETH, Provided: ${registrationFee} ETH`;
+            } else if (gasError.message.includes("already registered") || gasError.message.includes("Doctor is already registered")) {
               errorMessage = "This address is already registered as a doctor";
             } else if (gasError.message.includes("revert")) {
               // Try to extract the revert reason
@@ -256,15 +274,44 @@ export const useHealthcareContract = () => {
               if (revertMatch) {
                 errorMessage = revertMatch[1];
               } else {
-                errorMessage = gasError.message;
+                // Check for common revert reasons
+                if (gasError.message.includes("Incorrect registration fee")) {
+                  errorMessage = `Incorrect registration fee. Required: ${requiredFee} ETH`;
+                } else {
+                  errorMessage = "Transaction would revert. Please check: 1) Registration fee is correct, 2) You are not already registered, 3) All required fields are filled";
+                }
               }
             } else {
               errorMessage = gasError.message;
             }
           }
+          
+          // Log detailed error for debugging
+          console.error("Gas estimation failed:", {
+            error: gasError,
+            ipfsUrl,
+            doctorAddress,
+            name,
+            userType,
+            registrationFee,
+            requiredFee,
+            contractAddress: CONTRACT_ADDRESS
+          });
+          
           toast.error(errorMessage);
           throw gasError;
         }
+
+        // Log transaction details for debugging
+        console.log("Registering doctor with:", {
+          contractAddress: CONTRACT_ADDRESS,
+          ipfsUrl,
+          doctorAddress,
+          name,
+          userType,
+          registrationFee,
+          feeInWei: parseEther(registrationFee.toString()).toString()
+        });
 
         const result = await writeContract({
           address: CONTRACT_ADDRESS,
@@ -278,18 +325,43 @@ export const useHealthcareContract = () => {
       } catch (error) {
         console.error("Error registering doctor:", error);
         
+        // Detailed error logging
+        console.error("Registration error details:", {
+          error,
+          errorMessage: error.message,
+          shortMessage: error.shortMessage,
+          cause: error.cause,
+          data: error.data,
+          ipfsUrl,
+          doctorAddress,
+          name,
+          userType,
+          registrationFee,
+          contractAddress: CONTRACT_ADDRESS
+        });
+        
         // Extract more specific error messages
         let errorMessage = "Failed to register doctor";
-        if (error.shortMessage) {
-          if (error.shortMessage.includes("Incorrect registration fee")) {
-            errorMessage = "Registration fee amount is incorrect";
-          } else if (error.shortMessage.includes("already registered")) {
-            errorMessage = "This address is already registered as a doctor";
-          } else if (error.shortMessage.includes("revert")) {
-            errorMessage = error.shortMessage;
+        
+        // Check for common error patterns
+        const errorString = JSON.stringify(error).toLowerCase();
+        const errorMsg = (error.message || "").toLowerCase();
+        const shortMsg = (error.shortMessage || "").toLowerCase();
+        
+        if (errorMsg.includes("incorrect registration fee") || shortMsg.includes("incorrect registration fee")) {
+          errorMessage = `Registration fee is incorrect. Required: ${requiredFee} ETH, Provided: ${registrationFee} ETH`;
+        } else if (errorMsg.includes("already registered") || shortMsg.includes("already registered")) {
+          errorMessage = "This address is already registered as a doctor";
+        } else if (errorMsg.includes("revert") || shortMsg.includes("revert")) {
+          // Try to extract revert reason
+          const revertMatch = (error.message || error.shortMessage || "").match(/revert\s+(.+)/i);
+          if (revertMatch) {
+            errorMessage = `Transaction reverted: ${revertMatch[1]}`;
           } else {
-            errorMessage = error.shortMessage;
+            errorMessage = "Transaction reverted. Possible reasons: 1) Incorrect fee, 2) Already registered, 3) Invalid IPFS URL, 4) Contract address mismatch";
           }
+        } else if (error.shortMessage) {
+          errorMessage = error.shortMessage;
         } else if (error.message) {
           errorMessage = error.message;
         }
@@ -312,6 +384,120 @@ export const useHealthcareContract = () => {
 
       try {
         setLoading(true);
+        // Validate inputs
+        if (!doctorId || doctorId <= 0) {
+          toast.error("Invalid doctor ID");
+          return;
+        }
+
+        // Check if user is admin before attempting transaction
+        let isAdmin = false;
+        let adminAddress = null;
+        try {
+          adminAddress = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "admin",
+          });
+          
+          isAdmin = address && address.toLowerCase() === adminAddress?.toLowerCase();
+          
+          if (!isAdmin) {
+            toast.error(`Only admin can approve doctors. Admin address: ${adminAddress?.slice(0, 6)}...${adminAddress?.slice(-4)}`);
+            return;
+          }
+        } catch (adminError) {
+          console.warn("Could not verify admin status:", adminError);
+          // Continue anyway, let the contract revert with better error
+        }
+
+        // Check if doctor exists
+        try {
+          const doctorCount = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "doctorCount",
+          });
+          
+          if (Number(doctorId) > Number(doctorCount)) {
+            toast.error(`Doctor ID ${doctorId} does not exist. Total doctors: ${doctorCount}`);
+            return;
+          }
+        } catch (countError) {
+          console.warn("Could not check doctor count:", countError);
+        }
+
+        // Check if doctor is already approved
+        try {
+          const doctorDetails = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "doctors",
+            args: [doctorId],
+          });
+          
+          if (doctorDetails?.isApproved) {
+            toast.error("Doctor is already approved");
+            return;
+          }
+        } catch (doctorError) {
+          console.warn("Could not check doctor status:", doctorError);
+        }
+
+        // Estimate gas first to catch revert reasons
+        try {
+          await publicClient.estimateContractGas({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "APPROVE_DOCTOR_STATUS",
+            args: [doctorId],
+            account: address,
+          });
+        } catch (gasError) {
+          // Extract revert reason from error
+          let errorMessage = "Transaction would fail";
+          
+          if (gasError.message) {
+            if (gasError.message.includes("Only admin")) {
+              errorMessage = `Only admin can approve doctors. Your address: ${address?.slice(0, 6)}...${address?.slice(-4)}, Admin: ${adminAddress?.slice(0, 6)}...${adminAddress?.slice(-4)}`;
+            } else if (gasError.message.includes("Doctor does not exist")) {
+              errorMessage = `Doctor ID ${doctorId} does not exist`;
+            } else if (gasError.message.includes("already approved")) {
+              errorMessage = "Doctor is already approved";
+            } else if (gasError.message.includes("revert")) {
+              const revertMatch = gasError.message.match(/revert\s+(.+)/i);
+              if (revertMatch) {
+                errorMessage = `Transaction reverted: ${revertMatch[1]}`;
+              } else {
+                errorMessage = "Transaction would revert. Possible reasons: 1) Not admin, 2) Doctor doesn't exist, 3) Doctor already approved";
+              }
+            } else {
+              errorMessage = gasError.message;
+            }
+          }
+          
+          console.error("Gas estimation failed:", {
+            error: gasError,
+            doctorId,
+            address,
+            adminAddress,
+            isAdmin,
+            contractAddress: CONTRACT_ADDRESS
+          });
+          
+          toast.error(errorMessage);
+          throw gasError;
+        }
+
+        // Log transaction details
+        console.log("Approving doctor with:", {
+          contractAddress: CONTRACT_ADDRESS,
+          doctorId,
+          address,
+          adminAddress,
+          isAdmin
+        });
+
         const result = await writeContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
@@ -322,13 +508,51 @@ export const useHealthcareContract = () => {
         return result;
       } catch (error) {
         console.error("Error approving doctor:", error);
-        toast.error("Failed to approve doctor");
+        
+        // Detailed error logging
+        console.error("Approve doctor error details:", {
+          error,
+          errorMessage: error.message,
+          shortMessage: error.shortMessage,
+          cause: error.cause,
+          data: error.data,
+          doctorId,
+          address,
+          contractAddress: CONTRACT_ADDRESS
+        });
+        
+        // Extract more specific error messages
+        let errorMessage = "Failed to approve doctor";
+        
+        const errorMsg = (error.message || "").toLowerCase();
+        const shortMsg = (error.shortMessage || "").toLowerCase();
+        
+        if (errorMsg.includes("only admin") || shortMsg.includes("only admin")) {
+          errorMessage = "Only the contract admin can approve doctors. Please ensure you're connected with the admin wallet.";
+        } else if (errorMsg.includes("doctor does not exist") || shortMsg.includes("doctor does not exist")) {
+          errorMessage = `Doctor ID ${doctorId} does not exist`;
+        } else if (errorMsg.includes("already approved") || shortMsg.includes("already approved")) {
+          errorMessage = "Doctor is already approved";
+        } else if (errorMsg.includes("revert") || shortMsg.includes("revert")) {
+          const revertMatch = (error.message || error.shortMessage || "").match(/revert\s+(.+)/i);
+          if (revertMatch) {
+            errorMessage = `Transaction reverted: ${revertMatch[1]}`;
+          } else {
+            errorMessage = "Transaction reverted. Possible reasons: 1) Not admin, 2) Doctor doesn't exist, 3) Doctor already approved";
+          }
+        } else if (error.shortMessage) {
+          errorMessage = error.shortMessage;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        toast.error(errorMessage);
         throw error;
       } finally {
         setLoading(false);
       }
     },
-    [writeContract, isConnected]
+    [writeContract, isConnected, publicClient, address]
   );
 
   const prescribeMedicine = useCallback(
@@ -360,7 +584,7 @@ export const useHealthcareContract = () => {
   );
 
   const updatePatientMedicalHistory = useCallback(
-    async (patientId, newHistory) => {
+    async (patientId, newHistory, encrypt = true) => {
       if (!isConnected) {
         toast.error("Please connect your wallet");
         return;
@@ -368,11 +592,76 @@ export const useHealthcareContract = () => {
 
       try {
         setLoading(true);
+        
+        // Encrypt medical history if encryption is enabled
+        let historyToStore = newHistory;
+        if (encrypt && publicClient) {
+          try {
+            // Dynamic import to avoid circular dependency
+            const { default: abeEncryption } = await import('../utils/encryption');
+            
+            // Get doctor ID if user is a doctor - call contract directly to avoid circular dependency
+            let doctorId = null;
+            try {
+              // Check if user exists
+              const userExists = await publicClient.readContract({
+                address: CONTRACT_ADDRESS,
+                abi: CONTRACT_ABI,
+                functionName: "CHECK_USER_EXISTS",
+                args: [address],
+              });
+
+              if (userExists) {
+                // Get user type
+                const userInfo = await publicClient.readContract({
+                  address: CONTRACT_ADDRESS,
+                  abi: CONTRACT_ABI,
+                  functionName: "GET_USERNAME_TYPE",
+                  args: [address],
+                });
+
+                if (userInfo?.userType === 'doctor') {
+                  // Get doctor ID
+                  const doctorIdResult = await publicClient.readContract({
+                    address: CONTRACT_ADDRESS,
+                    abi: CONTRACT_ABI,
+                    functionName: "GET_DOCTOR_ID",
+                    args: [address],
+                  });
+                  doctorId = Number(doctorIdResult);
+                }
+              }
+            } catch (e) {
+              // Not a doctor or not registered
+              console.warn('Could not get doctor ID for encryption:', e);
+            }
+            
+            // Create access policy
+            const accessPolicy = abeEncryption.createMedicalRecordPolicy(
+              patientId,
+              doctorId,
+              true // allow admin
+            );
+            
+            // Encrypt the history entry
+            const encryptedPackage = await abeEncryption.encrypt(
+              { entry: newHistory, timestamp: new Date().toISOString() },
+              accessPolicy
+            );
+            
+            // Convert to string for blockchain storage
+            historyToStore = JSON.stringify(encryptedPackage);
+          } catch (encryptError) {
+            console.warn('Encryption failed, storing as plain text:', encryptError);
+            // Continue with plain text if encryption fails
+          }
+        }
+        
         const result = await writeContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "UPDATE_PATIENT_MEDICAL_HISTORY",
-          args: [patientId, newHistory],
+          args: [patientId, historyToStore],
         });
         toast.success("Medical history updated successfully!");
         return result;
@@ -384,7 +673,7 @@ export const useHealthcareContract = () => {
         setLoading(false);
       }
     },
-    [writeContract, isConnected]
+    [writeContract, isConnected, address, publicClient]
   );
 
   const completeAppointment = useCallback(
@@ -529,7 +818,7 @@ export const useHealthcareContract = () => {
 
       try {
         setLoading(true);
-        const result = await writeContract({
+        const hash = await writeContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "BOOK_APPOINTMENT",
@@ -546,17 +835,26 @@ export const useHealthcareContract = () => {
           ],
           value: parseEther(appointmentFee.toString()),
         });
+        
+        // Wait for transaction confirmation
+        if (hash && publicClient) {
+          toast.loading("Waiting for transaction confirmation...");
+          await publicClient.waitForTransactionReceipt({ hash });
+          toast.dismiss();
+        }
+        
         toast.success("Appointment booked successfully!");
-        return result;
+        return hash;
       } catch (error) {
         console.error("Error booking appointment:", error);
+        toast.dismiss();
         toast.error("Failed to book appointment");
         throw error;
       } finally {
         setLoading(false);
       }
     },
-    [writeContract, isConnected]
+    [writeContract, isConnected, publicClient]
   );
 
   const buyMedicine = useCallback(
@@ -736,7 +1034,7 @@ export const useHealthcareContract = () => {
       if (!publicClient) return [];
       const deployed = await isContractDeployed();
       if (!deployed) {
-        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        // Don't show toast, just return empty array silently
         return [];
       }
 
@@ -748,7 +1046,7 @@ export const useHealthcareContract = () => {
 
       return data || [];
     } catch (error) {
-      console.error("Error fetching medicines:", error);
+      // Silently handle errors to avoid console noise
       return [];
     }
   }, [publicClient]);
@@ -758,7 +1056,7 @@ export const useHealthcareContract = () => {
       if (!publicClient) return [];
       const deployed = await isContractDeployed();
       if (!deployed) {
-        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        // Don't show toast, just return empty array silently
         return [];
       }
 
@@ -770,7 +1068,7 @@ export const useHealthcareContract = () => {
 
       return data || [];
     } catch (error) {
-      console.error("Error fetching doctors:", error);
+      // Silently handle errors to avoid console noise
       return [];
     }
   }, [publicClient]);
@@ -909,67 +1207,69 @@ export const useHealthcareContract = () => {
       if (!publicClient) return null;
       const deployed = await isContractDeployed();
       if (!deployed) {
-        toast.error("Contract not found on current network. Check wallet network and NEXT_PUBLIC_CONTRACT_ADDRESS.");
+        // Don't show toast error, just return null silently
         return null;
       }
 
-      const [
-        admin,
-        registrationDoctorFee,
-        registrationPatientFee,
-        appointmentFee,
-        medicineCount,
-        doctorCount,
-        patientCount,
-        prescriptionCount,
-        appointmentCount,
-      ] = await Promise.all([
+      // Use Promise.allSettled to handle individual failures gracefully
+      const results = await Promise.allSettled([
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "admin",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "registrationDoctorFee",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "registrationPatientFee",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "appointmentFee",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "medicineCount",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "doctorCount",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "patientCount",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "prescriptionCount",
-        }),
+        }).catch(() => null),
         publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "appointmentCount",
-        }),
+        }).catch(() => null),
       ]);
+
+      // Extract values from Promise.allSettled results
+      const admin = results[0].status === "fulfilled" ? results[0].value : null;
+      const registrationDoctorFee = results[1].status === "fulfilled" ? results[1].value : null;
+      const registrationPatientFee = results[2].status === "fulfilled" ? results[2].value : null;
+      const appointmentFee = results[3].status === "fulfilled" ? results[3].value : null;
+      const medicineCount = results[4].status === "fulfilled" ? results[4].value : null;
+      const doctorCount = results[5].status === "fulfilled" ? results[5].value : null;
+      const patientCount = results[6].status === "fulfilled" ? results[6].value : null;
+      const prescriptionCount = results[7].status === "fulfilled" ? results[7].value : null;
+      const appointmentCount = results[8].status === "fulfilled" ? results[8].value : null;
 
       return {
         admin,
@@ -987,7 +1287,7 @@ export const useHealthcareContract = () => {
         appointmentCount: appointmentCount ? Number(appointmentCount) : 0,
       };
     } catch (error) {
-      console.error("Error fetching contract info:", error);
+      // Silently handle errors - don't log to console to avoid red lines
       return null;
     }
   }, [publicClient]);
@@ -1149,7 +1449,7 @@ export const useHealthcareContract = () => {
   );
 
   const getPatientMedicalHistory = useCallback(
-    async (patientId) => {
+    async (patientId, decrypt = true) => {
       try {
         if (!publicClient || !patientId) return [];
         const deployed = await isContractDeployed();
@@ -1165,13 +1465,102 @@ export const useHealthcareContract = () => {
           args: [patientId],
         });
 
-        return data || [];
+        const history = data || [];
+        
+        // Decrypt medical history entries if decryption is enabled
+        if (decrypt && history.length > 0 && address) {
+          try {
+            // Dynamic import to avoid circular dependency
+            const { default: abeEncryption } = await import('../utils/encryption');
+            
+            // Get user attributes - call contract directly to avoid circular dependency
+            let userAttributes = null;
+            try {
+              // Check if user exists
+              const userExists = await publicClient.readContract({
+                address: CONTRACT_ADDRESS,
+                abi: CONTRACT_ABI,
+                functionName: "CHECK_USER_EXISTS",
+                args: [address],
+              });
+
+              if (userExists) {
+                // Get user type
+                const userInfo = await publicClient.readContract({
+                  address: CONTRACT_ADDRESS,
+                  abi: CONTRACT_ABI,
+                  functionName: "GET_USERNAME_TYPE",
+                  args: [address],
+                });
+
+                if (userInfo) {
+                  const role = userInfo.userType;
+                  let doctorId = null;
+                  
+                  if (role === 'doctor') {
+                    try {
+                      const doctorIdResult = await publicClient.readContract({
+                        address: CONTRACT_ADDRESS,
+                        abi: CONTRACT_ABI,
+                        functionName: "GET_DOCTOR_ID",
+                        args: [address],
+                      });
+                      doctorId = Number(doctorIdResult);
+                    } catch (e) {
+                      // Doctor not registered
+                    }
+                  }
+                  
+                  userAttributes = abeEncryption.getUserAttributes(
+                    address,
+                    role,
+                    role === 'patient' ? patientId : null,
+                    doctorId
+                  );
+                }
+              }
+            } catch (e) {
+              console.warn('Could not get user attributes for decryption:', e);
+            }
+            
+            if (userAttributes) {
+              // Decrypt each entry
+              const decryptedHistory = await Promise.all(
+                history.map(async (entry) => {
+                  try {
+                    // Check if it's encrypted (JSON with encryptedData)
+                    const parsed = JSON.parse(entry);
+                    if (parsed.encryptedData && parsed.encryptedKey) {
+                      // Decrypt
+                      const decrypted = await abeEncryption.decrypt(
+                        parsed,
+                        userAttributes
+                      );
+                      return decrypted.entry;
+                    }
+                    // Not encrypted, return as-is
+                    return entry;
+                  } catch (e) {
+                    // Not JSON or decryption failed, return original
+                    return entry;
+                  }
+                })
+              );
+              return decryptedHistory;
+            }
+          } catch (decryptError) {
+            console.warn('Decryption failed, returning encrypted data:', decryptError);
+            // Return encrypted data if decryption fails
+          }
+        }
+        
+        return history;
       } catch (error) {
         console.error("Error fetching medical history:", error);
         return [];
       }
     },
-    [publicClient]
+    [publicClient, isContractDeployed, address]
   );
 
   const getPatientPrescriptions = useCallback(

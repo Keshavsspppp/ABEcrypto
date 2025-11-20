@@ -1,4 +1,5 @@
 import { PINATA_JWT, PINATA_GATEWAY } from "../config/contract";
+import abeEncryption from "./encryption";
 
 class IPFSService {
   constructor() {
@@ -301,6 +302,199 @@ class IPFSService {
 
   getIPFSUrl(hash) {
     return `${this.gateway}/ipfs/${hash}`;
+  }
+
+  /**
+   * Upload encrypted medical record to IPFS
+   * Uses ABE + AES hybrid encryption
+   */
+  async uploadEncryptedMedicalRecord(
+    medicalRecordData,
+    accessPolicy,
+    metadata = {}
+  ) {
+    try {
+      // Encrypt the medical record data
+      const encryptedPackage = await abeEncryption.encrypt(
+        medicalRecordData,
+        accessPolicy
+      );
+
+      // Upload encrypted package to IPFS
+      const result = await this.uploadJSONToIPFS(encryptedPackage, {
+        name: metadata.name || `encrypted-medical-record-${Date.now()}`,
+        type: "encrypted-medical-record",
+        keyvalues: {
+          encrypted: "true",
+          algorithm: "ABE-AES-Hybrid",
+          ...metadata.keyvalues,
+        },
+      });
+
+      return {
+        ...result,
+        encrypted: true,
+        policy: accessPolicy,
+      };
+    } catch (error) {
+      console.error("Error uploading encrypted medical record:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch and decrypt medical record from IPFS
+   */
+  async fetchAndDecryptMedicalRecord(hash, userAttributes) {
+    try {
+      // Fetch encrypted package from IPFS
+      const encryptedPackage = await this.fetchFromIPFS(hash);
+
+      // Check if it's encrypted
+      if (!encryptedPackage.encryptedData || !encryptedPackage.encryptedKey) {
+        // Not encrypted, return as-is (backward compatibility)
+        return encryptedPackage;
+      }
+
+      // Decrypt using ABE + AES
+      const decryptedData = await abeEncryption.decrypt(
+        encryptedPackage,
+        userAttributes
+      );
+
+      return decryptedData;
+    } catch (error) {
+      console.error("Error fetching and decrypting medical record:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload encrypted patient profile to IPFS
+   */
+  async uploadEncryptedPatientProfile(
+    profileData,
+    profileImage,
+    patientId,
+    doctorId = null
+  ) {
+    try {
+      let imageHash = null;
+      if (profileImage) {
+        const imageResult = await this.uploadToIPFS(profileImage, {
+          name: `patient-profile-${Date.now()}`,
+          type: "patient-profile-image",
+        });
+        imageHash = imageResult.hash;
+      }
+
+      // Create access policy for patient profile
+      const accessPolicy = abeEncryption.createMedicalRecordPolicy(
+        patientId,
+        doctorId,
+        true // allow admin
+      );
+
+      // Encrypt sensitive profile data
+      const sensitiveData = {
+        ...profileData,
+        profileImage: imageHash,
+        timestamp: new Date().toISOString(),
+        type: "patient-profile",
+      };
+
+      const encryptedPackage = await abeEncryption.encrypt(
+        sensitiveData,
+        accessPolicy
+      );
+
+      // Upload encrypted package
+      const metadataResult = await this.uploadJSONToIPFS(encryptedPackage, {
+        name: `encrypted-patient-profile-${profileData.name || "unknown"}`,
+        type: "encrypted-patient-profile",
+        keyvalues: {
+          encrypted: "true",
+          algorithm: "ABE-AES-Hybrid",
+          patientId: patientId.toString(),
+        },
+      });
+
+      return {
+        metadataHash: metadataResult.hash,
+        metadataUrl: metadataResult.url,
+        imageHash,
+        imageUrl: imageHash ? `${this.gateway}/ipfs/${imageHash}` : null,
+        encrypted: true,
+      };
+    } catch (error) {
+      console.error("Error uploading encrypted patient profile:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch and decrypt patient profile from IPFS
+   */
+  async fetchAndDecryptPatientProfile(hash, userAttributes) {
+    try {
+      const encryptedPackage = await this.fetchFromIPFS(hash);
+
+      // Check if encrypted
+      if (!encryptedPackage.encryptedData || !encryptedPackage.encryptedKey) {
+        // Not encrypted, return as-is (backward compatibility)
+        return encryptedPackage;
+      }
+
+      // Decrypt
+      const decryptedData = await abeEncryption.decrypt(
+        encryptedPackage,
+        userAttributes
+      );
+
+      return decryptedData;
+    } catch (error) {
+      console.error("Error fetching and decrypting patient profile:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Encrypt medical history entry
+   */
+  async encryptMedicalHistoryEntry(entry, patientId, doctorId = null) {
+    try {
+      const accessPolicy = abeEncryption.createMedicalRecordPolicy(
+        patientId,
+        doctorId,
+        true
+      );
+
+      const encryptedPackage = await abeEncryption.encrypt(
+        { entry, timestamp: new Date().toISOString() },
+        accessPolicy
+      );
+
+      return encryptedPackage;
+    } catch (error) {
+      console.error("Error encrypting medical history entry:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Decrypt medical history entry
+   */
+  async decryptMedicalHistoryEntry(encryptedEntry, userAttributes) {
+    try {
+      const decryptedData = await abeEncryption.decrypt(
+        encryptedEntry,
+        userAttributes
+      );
+      return decryptedData.entry;
+    } catch (error) {
+      console.error("Error decrypting medical history entry:", error);
+      throw error;
+    }
   }
 }
 

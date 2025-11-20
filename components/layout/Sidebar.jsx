@@ -322,10 +322,16 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
   return (
     <>
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-white/95 backdrop-blur-xl shadow-2xl transform ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 bg-white/95 backdrop-blur-2xl shadow-2xl transform ${
           isOpen ? "translate-x-0" : "-translate-x-full "
-        } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 border-r border-slate-200/60`}
+        } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 border-r border-slate-200/60 relative overflow-hidden`}
       >
+        {/* Ambient glow */}
+        <div className="pointer-events-none absolute inset-0 opacity-70">
+          <div className="absolute -top-24 -right-10 w-56 h-56 bg-gradient-to-br from-emerald-200/60 via-cyan-100/40 to-transparent rounded-full blur-[90px]" />
+          <div className="absolute bottom-10 -left-24 w-72 h-72 bg-gradient-to-br from-indigo-200/60 via-purple-100/30 to-transparent rounded-full blur-[110px]" />
+        </div>
+
         <div
           className={`flex items-center justify-between h-20 px-6 bg-gradient-to-br ${getRoleColor()} relative overflow-hidden shadow-lg`}
         >
@@ -390,20 +396,20 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
         )}
 
         {/* Modern Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto relative z-10">
           {menuItems.map((item, index) => (
             <button
               key={item.name}
               onClick={() => handleNavigation(item.href)}
-              className={`group w-full flex items-center px-4 py-3.5 text-sm font-semibold rounded-xl transition-all duration-300 ease-out transform hover:scale-[1.02] active:scale-100 ${getColorClasses(
+              className={`group w-full flex items-center px-4 py-3.5 text-sm font-semibold rounded-2xl border border-transparent transition-all duration-300 ease-out transform hover:scale-[1.015] active:scale-100 ${getColorClasses(
                 item.color,
                 isActivePath(item.href)
               )}`}
             >
-              <div className={`flex items-center justify-center w-9 h-9 rounded-xl mr-3 transition-all duration-300 group-hover:scale-110 ${
+              <div className={`flex items-center justify-center w-10 h-10 rounded-xl mr-3 transition-all duration-300 group-hover:scale-110 ${
                 isActivePath(item.href) 
-                  ? "bg-white/80 shadow-md" 
-                  : "bg-white/50 group-hover:bg-white/70"
+                  ? "bg-white/80 shadow-lg ring-2 ring-white/50" 
+                  : "bg-white/50 group-hover:bg-white/80"
               }`}>
                 <item.icon
                   className={`h-5 w-5 ${getIconColor(
@@ -412,16 +418,41 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
                   )}`}
                 />
               </div>
-              <span className="flex-1 text-left font-medium">{item.name}</span>
+              <div className="flex-1 text-left">
+                <span className="font-medium block">{item.name}</span>
+                {!isActivePath(item.href) && (
+                  <span className="text-[11px] text-gray-400 group-hover:text-emerald-500 transition">
+                    {index % 2 === 0 ? "Secure access" : "Medical data"}
+                  </span>
+                )}
+              </div>
               {isActivePath(item.href) && (
-                <div className="w-2 h-2 bg-current rounded-full animate-pulse shadow-sm"></div>
+                <div className="w-2.5 h-2.5 bg-current rounded-full animate-pulse shadow-sm"></div>
               )}
             </button>
           ))}
         </nav>
 
+        {/* Ambient info tags */}
+        <div className="px-4 grid grid-cols-2 gap-3 text-xs text-gray-600 relative z-10">
+          <div className="px-3 py-2 rounded-xl bg-white/70 border border-emerald-100 shadow-sm">
+            <p className="font-semibold text-emerald-600 flex items-center gap-1 text-[11px]">
+              <MdHealthAndSafety className="h-3.5 w-3.5" />
+              HIPAA Ready
+            </p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Encrypted records</p>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-white/70 border border-cyan-100 shadow-sm">
+            <p className="font-semibold text-cyan-600 flex items-center gap-1 text-[11px]">
+              <MdBiotech className="h-3.5 w-3.5" />
+              AI Insights
+            </p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Realtime analytics</p>
+          </div>
+        </div>
+
         {/* Modern Quick actions footer */}
-        <div className="px-4 py-4 border-t border-gray-200/50 bg-gradient-to-r from-emerald-50/30 to-teal-50/30 backdrop-blur-sm">
+        <div className="px-4 py-4 border-t border-gray-200/50 bg-gradient-to-r from-emerald-50/50 to-teal-50/40 backdrop-blur-lg relative z-10">
           {currentRole === "guest" && (
             <div className="space-y-3">
               <button

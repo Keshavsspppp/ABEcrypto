@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount } from "wagmi";
 import {
@@ -44,16 +44,78 @@ const Header = ({ onMenuClick, userType }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [lastSeenNotificationId, setLastSeenNotificationId] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
   const { address, isConnected } = useAccount();
   const { getNotifications } = useHealthcareContract();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedId = Number(
+      window.localStorage.getItem("medichain_last_seen_notification_id")
+    );
+    if (!Number.isNaN(storedId) && storedId > 0) {
+      setLastSeenNotificationId(storedId);
+    }
+  }, []);
+
+  const getNotificationIdentifier = useCallback((notification) => {
+    if (!notification) return 0;
+    if (notification.id !== undefined && notification.id !== null) {
+      return Number(notification.id);
+    }
+    if (notification.timestamp) {
+      return Number(notification.timestamp);
+    }
+    return 0;
+  }, []);
+
+  const markNotificationsAsRead = useCallback(
+    (latestNotifications = []) => {
+      if (!latestNotifications.length) {
+        setUnreadCount(0);
+        return;
+      }
+
+      const latestId = Math.max(
+        lastSeenNotificationId || 0,
+        ...latestNotifications.map((notification) =>
+          getNotificationIdentifier(notification)
+        )
+      );
+
+      setLastSeenNotificationId(latestId);
+      setUnreadCount(0);
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          "medichain_last_seen_notification_id",
+          String(latestId)
+        );
+      }
+    },
+    [getNotificationIdentifier, lastSeenNotificationId]
+  );
 
   useEffect(() => {
     const fetchNotifications = async () => {
       if (isConnected && address) {
         try {
           const userNotifications = await getNotifications(address);
-          setNotifications(userNotifications.slice(-5)); // Get latest 5 notifications
+          const latestNotifications = userNotifications.slice(-5);
+          setNotifications(latestNotifications); // Get latest 5 notifications
+
+          if (showNotifications) {
+            markNotificationsAsRead(latestNotifications);
+          } else {
+            const unseen = latestNotifications.filter(
+              (notification) =>
+                getNotificationIdentifier(notification) >
+                (lastSeenNotificationId || 0)
+            ).length;
+            setUnreadCount(unseen);
+          }
         } catch (error) {
           console.error("Error fetching notifications:", error);
         }
@@ -64,7 +126,15 @@ const Header = ({ onMenuClick, userType }) => {
     const interval = setInterval(fetchNotifications, 30000); // Refresh every 30 seconds
 
     return () => clearInterval(interval);
-  }, [isConnected, address, getNotifications]);
+  }, [
+    isConnected,
+    address,
+    getNotifications,
+    getNotificationIdentifier,
+    lastSeenNotificationId,
+    markNotificationsAsRead,
+    showNotifications,
+  ]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -107,6 +177,25 @@ const Header = ({ onMenuClick, userType }) => {
     }
   };
 
+  const currentTimeDisplay = useMemo(
+    () =>
+      currentTime.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [currentTime]
+  );
+
+  const currentDateDisplay = useMemo(
+    () =>
+      currentTime.toLocaleDateString([], {
+        weekday: "short",
+        month: "short",
+        day: "2-digit",
+      }),
+    [currentTime]
+  );
+
   const getNotificationIcon = (categoryType) => {
     switch (categoryType) {
       case "Medicine":
@@ -141,11 +230,23 @@ const Header = ({ onMenuClick, userType }) => {
     }
   };
 
-  return (
-    <header className="bg-white/90 backdrop-blur-xl shadow-sm border-b border-slate-200/60 sticky top-0 z-30 transition-all duration-300">
-      <div className="accent-divider"></div>
+  const handleToggleNotifications = () => {
+    const nextState = !showNotifications;
+    setShowNotifications(nextState);
+    if (!showNotifications && notifications.length) {
+      markNotificationsAsRead(notifications);
+    }
+  };
 
-      <div className="px-4 sm:px-6 lg:px-8">
+  return (
+    <header className="relative bg-white/90 backdrop-blur-xl shadow-sm border-b border-slate-200/60 sticky top-0 z-30 transition-all duration-300 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 opacity-70">
+        <div className="absolute -top-16 -right-8 w-52 h-52 bg-gradient-to-br from-emerald-200/60 via-cyan-100/40 to-transparent rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-24 -left-10 w-64 h-64 bg-gradient-to-br from-indigo-200/70 via-purple-100/40 to-transparent rounded-full blur-[90px]"></div>
+      </div>
+      <div className="accent-divider relative z-10"></div>
+
+      <div className="px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="flex justify-between items-center h-16">
           {/* Left section */}
           <div className="flex items-center">
@@ -177,21 +278,37 @@ const Header = ({ onMenuClick, userType }) => {
           </div>
 
           {/* Center section - Time & Status */}
-          <div className="hidden md:flex items-center space-x-4">
-            <div className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200">
-              <FiClock className="h-4 w-4 text-emerald-600" />
-              <span className="text-sm font-medium text-gray-700">
-                {currentTime.toLocaleTimeString()}
-              </span>
+          <div className="hidden lg:flex items-center space-x-4">
+            <div className="flex items-center space-x-3 px-5 py-2 bg-white/75 rounded-2xl border border-emerald-100 shadow-sm backdrop-blur">
+              <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+                <FiClock className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+                  Live Time
+                </p>
+                <p className="text-sm font-bold text-slate-900">
+                  {currentTimeDisplay}
+                </p>
+              </div>
+              <div className="h-8 w-px bg-slate-200" />
+              <div className="text-xs font-semibold text-slate-500">
+                {currentDateDisplay}
+              </div>
             </div>
 
             {isConnected && (
-              <div className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl border border-teal-200">
-                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                <MdHealthAndSafety className="h-4 w-4 text-teal-600" />
-                <span className="text-sm font-medium text-gray-700">
-                  Secure
-                </span>
+              <div className="flex items-center space-x-3 px-5 py-2 bg-white/75 rounded-2xl border border-teal-100 shadow-sm backdrop-blur">
+                <div className="p-1.5 rounded-full bg-gradient-to-r from-teal-400 to-emerald-400 animate-pulse shadow-inner"></div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+                    Network
+                  </p>
+                  <p className="text-sm font-bold text-slate-900 flex items-center gap-1">
+                    <MdHealthAndSafety className="h-4 w-4 text-teal-500" />
+                    Secure
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -215,15 +332,15 @@ const Header = ({ onMenuClick, userType }) => {
             {isConnected && (
               <div className="relative">
                 <button
-                  onClick={() => setShowNotifications(!showNotifications)}
+                  onClick={handleToggleNotifications}
                   className="relative p-2.5 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-110 active:scale-95"
                 >
                   <MdNotifications className="h-6 w-6" />
-                  {notifications.length > 0 && (
+                  {unreadCount > 0 && (
                     <div className="absolute -top-1 -right-1">
                       <div className="relative">
                         <span className="flex h-5 w-5 items-center justify-center bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs rounded-full font-bold shadow-lg">
-                          {notifications.length}
+                          {unreadCount}
                         </span>
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                       </div>

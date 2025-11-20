@@ -1,5 +1,8 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
+import { useRouter } from "next/router";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import { useHealthcareContract } from "../../hooks/useContract";
@@ -24,22 +27,33 @@ const Layout = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const { address, isConnected } = useAccount();
   const { getUserType } = useHealthcareContract();
+  const router = useRouter();
+
+  // No automatic redirects - allow manual navigation
+  // Removed redirect on wallet disconnect to allow manual URL navigation
 
   useEffect(() => {
     const fetchUserType = async () => {
       if (isConnected && address) {
+        // No automatic redirects - allow manual navigation
+        // Owner can navigate to any page manually
+
         try {
           const userInfo = await getUserType(address);
           setUserType(userInfo);
         } catch (error) {
           console.error("Error fetching user type:", error);
         }
+      } else {
+        // Clear user type when disconnected
+        setUserType(null);
       }
       setLoading(false);
     };
 
     fetchUserType();
-  }, [isConnected, address, getUserType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address, router]);
 
   if (loading) {
     return (

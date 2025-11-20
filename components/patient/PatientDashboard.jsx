@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import {
   FiCalendar,
@@ -78,59 +78,76 @@ const PatientDashboard = () => {
     getAllApprovedDoctors,
   } = useHealthcareContract();
 
-  useEffect(() => {
-    const fetchPatientData = async () => {
-      if (!isConnected || !address) {
+  // Function to fetch patient data
+  const fetchPatientData = useCallback(async () => {
+    if (!isConnected || !address) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Get patient ID
+      const patientId = await getPatientId(address);
+      if (!patientId) {
         setLoading(false);
         return;
       }
 
-      try {
-        setLoading(true);
+      // Fetch all patient data
+      const [
+        patientDetails,
+        patientAppointments,
+        patientPrescriptions,
+        patientOrders,
+      ] = await Promise.all([
+        getPatientDetails(patientId),
+        getPatientAppointments(patientId),
+        getPatientPrescriptions(patientId),
+        getPatientOrders(patientId),
+      ]);
 
-        // Get patient ID
-        const patientId = await getPatientId(address);
-        if (!patientId) {
-          setLoading(false);
-          return;
-        }
+      setPatientData(patientDetails);
+      setAppointments(patientAppointments || []);
+      setPrescriptions(patientPrescriptions || []);
+      setOrders(patientOrders || []);
 
-        // Fetch all patient data
-        const [
-          patientDetails,
-          patientAppointments,
-          patientPrescriptions,
-          patientOrders,
-        ] = await Promise.all([
-          getPatientDetails(patientId),
-          getPatientAppointments(patientId),
-          getPatientPrescriptions(patientId),
-          getPatientOrders(patientId),
-        ]);
+      // Calculate stats
+      const activeAppointments =
+        patientAppointments?.filter((apt) => apt.isOpen)?.length || 0;
+      setStats({
+        totalAppointments: patientAppointments?.length || 0,
+        activeAppointments,
+        totalPrescriptions: patientPrescriptions?.length || 0,
+        totalOrders: patientOrders?.length || 0,
+      });
+    } catch (error) {
+      console.error("Error fetching patient data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [isConnected, address, getPatientId, getPatientDetails, getPatientAppointments, getPatientPrescriptions, getPatientOrders]);
 
-        setPatientData(patientDetails);
-        setAppointments(patientAppointments || []);
-        setPrescriptions(patientPrescriptions || []);
-        setOrders(patientOrders || []);
-
-        // Calculate stats
-        const activeAppointments =
-          patientAppointments?.filter((apt) => apt.isOpen)?.length || 0;
-        setStats({
-          totalAppointments: patientAppointments?.length || 0,
-          activeAppointments,
-          totalPrescriptions: patientPrescriptions?.length || 0,
-          totalOrders: patientOrders?.length || 0,
-        });
-      } catch (error) {
-        console.error("Error fetching patient data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+  useEffect(() => {
     fetchPatientData();
-  }, [isConnected, address]);
+  }, [fetchPatientData]);
+
+  // Check for refresh parameter in URL and refresh data if present
+  useEffect(() => {
+    const { refresh } = router.query;
+    if (refresh === "true" && isConnected && address) {
+      // Remove the refresh parameter from URL
+      router.replace("/patient/dashboard", undefined, { shallow: true });
+      
+      // Wait a bit for blockchain state to update, then refresh
+      const timeoutId = setTimeout(() => {
+        fetchPatientData();
+      }, 2000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [router.query, isConnected, address, fetchPatientData, router]);
 
   const formatDate = (timestamp) => {
     // Convert BigInt to Number for date operations

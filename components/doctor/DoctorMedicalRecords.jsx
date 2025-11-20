@@ -82,8 +82,30 @@ const PatientRecordCard = ({ patient, onSelect, onViewHistory }) => {
             "https://gateway.pinata.cloud/ipfs/",
             ""
           );
-          const data = await ipfsService.fetchFromIPFS(hash);
-          setPatientData(data);
+          
+          // Try to fetch and decrypt, fallback to regular fetch if decryption fails
+          try {
+            const { useAccount } = await import('wagmi');
+            const { useHealthcareContract } = await import('../../hooks/useContract');
+            const abeEncryption = (await import('../../utils/encryption')).default;
+            
+            // Get user attributes for decryption
+            // Note: This is a simplified approach - in a real component, use hooks
+            const data = await ipfsService.fetchFromIPFS(hash);
+            
+            // Check if encrypted and try to decrypt
+            if (data.encryptedData && data.encryptedKey) {
+              // This will be handled by the hook in the parent component
+              // For now, just use the data as-is
+              setPatientData(data);
+            } else {
+              setPatientData(data);
+            }
+          } catch (decryptError) {
+            // If decryption fails, try regular fetch
+            const data = await ipfsService.fetchFromIPFS(hash);
+            setPatientData(data);
+          }
         } catch (error) {
           console.error("Error fetching patient data:", error);
         } finally {

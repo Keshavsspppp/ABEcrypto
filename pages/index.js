@@ -130,7 +130,8 @@ const HomePage = () => {
           totalAppointments: appointmentsData?.length || 0,
         });
 
-        // Fetch user type if connected
+        // No automatic redirects - allow manual navigation
+        // Fetch user type without redirecting
         if (isConnected && address && !isCancelled && isMounted) {
           try {
             const userInfo = await getUserType(address);
@@ -158,7 +159,7 @@ const HomePage = () => {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, address]);
+  }, [isConnected, address, router]);
 
   // Show loading spinner
   if (loading) {
