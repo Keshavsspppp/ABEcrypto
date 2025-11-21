@@ -717,7 +717,7 @@ const HealthcareChat = () => {
       <div className="absolute inset-0 opacity-5 overflow-hidden pointer-events-none">
         <MdChat className="absolute top-20 right-20 h-32 w-32 text-teal-600 animate-pulse" />
         <FaHeartbeat className="absolute bottom-20 left-20 h-24 w-24 text-cyan-600" />
-        <MdLocalHospital className="absolute top-1/2 left-1/4 h-28 w-28 text-blue-600 animate-pulse animation-delay-2000" />
+        <MdLocalHospital className="absolute top-1/2 left-1/4 h-28 w-28 text-blue-600 animate-pulse" style={{ animationDelay: "0.2s" }} />
       </div>
 
       {/* Sidebar - Contacts */}

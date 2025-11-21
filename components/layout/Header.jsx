@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import {
   FiMenu,
   FiBell,
@@ -37,6 +37,7 @@ import {
   FaSyringe,
 } from "react-icons/fa";
 import { useHealthcareContract } from "../../hooks/useContract";
+import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../../config/contract";
 import { formatTime } from "../../utils/helpers";
 import CustomConnectButton from "../layout/CustomConnectButton";
 
@@ -45,18 +46,20 @@ const Header = ({ onMenuClick, userType }) => {
   const [showProfile, setShowProfile] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [lastSeenNotificationId, setLastSeenNotificationId] = useState(0);
+  const [lastSeenNotificationId, setLastSeenNotificationId] = useState(-1);
   const [currentTime, setCurrentTime] = useState(new Date());
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
   const { getNotifications } = useHealthcareContract();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const storedId = Number(
-      window.localStorage.getItem("medichain_last_seen_notification_id")
-    );
-    if (!Number.isNaN(storedId) && storedId > 0) {
+    const raw = window.localStorage.getItem("medichain_last_seen_notification_id");
+    const storedId = Number(raw);
+    if (!Number.isNaN(storedId)) {
       setLastSeenNotificationId(storedId);
+    } else {
+      setLastSeenNotificationId(-1);
     }
   }, []);
 
@@ -79,7 +82,7 @@ const Header = ({ onMenuClick, userType }) => {
       }
 
       const latestId = Math.max(
-        lastSeenNotificationId || 0,
+        lastSeenNotificationId ?? -1,
         ...latestNotifications.map((notification) =>
           getNotificationIdentifier(notification)
         )
@@ -112,7 +115,7 @@ const Header = ({ onMenuClick, userType }) => {
             const unseen = latestNotifications.filter(
               (notification) =>
                 getNotificationIdentifier(notification) >
-                (lastSeenNotificationId || 0)
+                (lastSeenNotificationId ?? -1)
             ).length;
             setUnreadCount(unseen);
           }
@@ -143,6 +146,40 @@ const Header = ({ onMenuClick, userType }) => {
 
     return () => clearInterval(timer);
   }, []);
+
+  // Real-time notification updates via on-chain event subscription
+  useEffect(() => {
+    if (!publicClient || !isConnected || !address) return;
+
+    const unwatch = publicClient.watchContractEvent({
+      address: CONTRACT_ADDRESS,
+      abi: CONTRACT_ABI,
+      eventName: "NOTIFICATiON_SENT",
+      onLogs: async (logs) => {
+        try {
+          for (const log of logs) {
+            const args = log?.args || {};
+            const user = args.user || args[0];
+            if (user && String(user).toLowerCase() === String(address).toLowerCase()) {
+              const userNotifications = await getNotifications(address);
+              const latestNotifications = userNotifications.slice(-5);
+              setNotifications(latestNotifications);
+              // Increment unread only if dropdown is closed
+              setUnreadCount((prev) => (showNotifications ? 0 : prev + 1));
+            }
+          }
+        } catch (e) {
+          console.error("Error handling NOTIFICATiON_SENT logs:", e);
+        }
+      },
+    });
+
+    return () => {
+      try {
+        unwatch?.();
+      } catch {}
+    };
+  }, [publicClient, isConnected, address, getNotifications, showNotifications]);
 
   const getUserRole = () => {
     if (!userType) return "Guest";
