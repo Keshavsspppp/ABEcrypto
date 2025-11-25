@@ -198,7 +198,8 @@ const DoctorRegistration = () => {
         address,
         formData.name,
         "doctor",
-        registrationFee
+        registrationFee,
+        formData.specialization
       );
 
       if (tx) {
