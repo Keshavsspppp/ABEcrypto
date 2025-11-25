@@ -20,6 +20,7 @@ contract Healthcare {
         uint appointmentCount;
         uint successfulTreatmentCount;
         bool isApproved;
+        string speciality; // Medical speciality (e.g., "Cardiology", "Neurology")
     }
 
     struct Patient {
@@ -91,6 +92,16 @@ contract Healthcare {
         string categoryType;
     }
 
+    struct AccessRequest {
+        uint id;
+        uint patientId;
+        uint doctorId;
+        uint medicalRecordIndex; // Index in patient's medicalHistory array
+        string reason;
+        uint timestamp;
+        string status; // "pending", "approved", "denied"
+    }
+
     AllUserStruck[] getAllUsers;
 
     mapping(address => User) userList;
@@ -105,6 +116,12 @@ contract Healthcare {
     mapping(uint => Appointment) public appointments;
     mapping(address => bool) public registeredDoctors;
     mapping(address => bool) public registeredPatients;
+    
+    // Access request mappings
+    mapping(uint => AccessRequest) public accessRequests;
+    mapping(uint => uint[]) public patientAccessRequests; // patientId => requestIds
+    mapping(uint => uint[]) public doctorAccessRequests; // doctorId => requestIds
+    uint public accessRequestCount;
 
     uint public medicineCount;
     uint public doctorCount;
@@ -136,6 +153,9 @@ contract Healthcare {
    //PATIENTS
     event PATIENT_ADDED(uint id, string _IPFS_URL, string[] medicalHistory);
     event NOTIFICATiON_SENT(address indexed user, string message, uint timestamp);
+    event ACCESS_REQUEST_CREATED(uint requestId, uint patientId, uint doctorId);
+    event ACCESS_REQUEST_APPROVED(uint requestId, uint patientId, uint doctorId);
+    event ACCESS_REQUEST_DENIED(uint requestId, uint patientId, uint doctorId);
    //END PATIENTS
    
     //PRESCRIBED
@@ -242,12 +262,12 @@ contract Healthcare {
     //--------------DOCTOR------------------
 
     //ADD DOCTOR
-    function ADD_DOCTOR(string memory _IPFS_URL, address _address, string calldata _name,  string memory _type) public payable {
+    function ADD_DOCTOR(string memory _IPFS_URL, address _address, string calldata _name,  string memory _type, string memory _speciality) public payable {
         require(msg.value == registrationDoctorFee, "Incorrect registration fee");
         require(!registeredDoctors[_address], "Doctor is already registered");
         
         doctorCount++;
-        doctors[doctorCount] = Doctor(doctorCount, _IPFS_URL, _address, 0, 0, false);
+        doctors[doctorCount] = Doctor(doctorCount, _IPFS_URL, _address, 0, 0, false, _speciality);
         registeredDoctors[_address] = true;
 
         payable(admin).transfer(msg.value);
@@ -755,4 +775,152 @@ contract Healthcare {
     }
 
      //--------------END OF CHAT------------------
+
+     //--------------ACCESS REQUEST SYSTEM------------------
+
+    // Request access to a patient's medical record
+    function REQUEST_ACCESS(uint _patientId, uint _medicalRecordIndex, string memory _reason) public onlyDoctor {
+        require(_patientId <= patientCount, "Patient does not exist");
+        require(_medicalRecordIndex < patients[_patientId].medicalHistory.length, "Medical record index out of bounds");
+        
+        uint doctorId = GET_DOCTOR_ID(msg.sender);
+        
+        accessRequestCount++;
+        accessRequests[accessRequestCount] = AccessRequest({
+            id: accessRequestCount,
+            patientId: _patientId,
+            doctorId: doctorId,
+            medicalRecordIndex: _medicalRecordIndex,
+            reason: _reason,
+            timestamp: block.timestamp,
+            status: "pending"
+        });
+        
+        patientAccessRequests[_patientId].push(accessRequestCount);
+        doctorAccessRequests[doctorId].push(accessRequestCount);
+        
+        ADD_NOTIFICATION(patients[_patientId].accountAddress, "A doctor has requested access to your medical records", "AccessRequest");
+        ADD_NOTIFICATION(msg.sender, "Your access request has been submitted", "AccessRequest");
+        
+        emit ACCESS_REQUEST_CREATED(accessRequestCount, _patientId, doctorId);
+    }
+    
+    // Approve access request (only patient can approve)
+    function APPROVE_ACCESS_REQUEST(uint _requestId) public {
+        require(_requestId <= accessRequestCount, "Access request does not exist");
+        AccessRequest storage request = accessRequests[_requestId];
+        require(patients[request.patientId].accountAddress == msg.sender, "Only the patient can approve the request");
+        require(keccak256(bytes(request.status)) == keccak256(bytes("pending")), "Request is not pending");
+        
+        request.status = "approved";
+        
+        ADD_NOTIFICATION(doctors[request.doctorId].accountAddress, "Your access request has been approved", "AccessRequest");
+        ADD_NOTIFICATION(msg.sender, "You have approved the access request", "AccessRequest");
+        
+        emit ACCESS_REQUEST_APPROVED(_requestId, request.patientId, request.doctorId);
+    }
+    
+    // Deny access request (only patient can deny)
+    function DENY_ACCESS_REQUEST(uint _requestId) public {
+        require(_requestId <= accessRequestCount, "Access request does not exist");
+        AccessRequest storage request = accessRequests[_requestId];
+        require(patients[request.patientId].accountAddress == msg.sender, "Only the patient can deny the request");
+        require(keccak256(bytes(request.status)) == keccak256(bytes("pending")), "Request is not pending");
+        
+        request.status = "denied";
+        
+        ADD_NOTIFICATION(doctors[request.doctorId].accountAddress, "Your access request has been denied", "AccessRequest");
+        ADD_NOTIFICATION(msg.sender, "You have denied the access request", "AccessRequest");
+        
+        emit ACCESS_REQUEST_DENIED(_requestId, request.patientId, request.doctorId);
+    }
+    
+    // Get all access requests for a patient
+    function GET_PATIENT_ACCESS_REQUESTS(uint _patientId) public view returns (AccessRequest[] memory) {
+        require(_patientId <= patientCount, "Patient does not exist");
+        require(patients[_patientId].accountAddress == msg.sender || msg.sender == admin, "Only the patient or admin can view requests");
+        
+        uint[] memory requestIds = patientAccessRequests[_patientId];
+        AccessRequest[] memory requests = new AccessRequest[](requestIds.length);
+        
+        for (uint i = 0; i < requestIds.length; i++) {
+            requests[i] = accessRequests[requestIds[i]];
+        }
+        
+        return requests;
+    }
+    
+    // Get all access requests made by a doctor
+    function GET_DOCTOR_ACCESS_REQUESTS(uint _doctorId) public view returns (AccessRequest[] memory) {
+        require(_doctorId <= doctorCount, "Doctor does not exist");
+        require(doctors[_doctorId].accountAddress == msg.sender || msg.sender == admin, "Only the doctor or admin can view requests");
+        
+        uint[] memory requestIds = doctorAccessRequests[_doctorId];
+        AccessRequest[] memory requests = new AccessRequest[](requestIds.length);
+        
+        for (uint i = 0; i < requestIds.length; i++) {
+            requests[i] = accessRequests[requestIds[i]];
+        }
+        
+        return requests;
+    }
+    
+    // Check if doctor has access to specific medical record
+    function HAS_ACCESS_TO_RECORD(uint _patientId, uint _medicalRecordIndex, address _doctorAddress) public view returns (bool) {
+        require(_patientId <= patientCount, "Patient does not exist");
+        require(_medicalRecordIndex < patients[_patientId].medicalHistory.length, "Medical record index out of bounds");
+        
+        // Admin always has access
+        if (_doctorAddress == admin) {
+            return true;
+        }
+        
+        // Patient always has access to their own records
+        if (_doctorAddress == patients[_patientId].accountAddress) {
+            return true;
+        }
+        
+        // Check if doctor is registered
+        if (!registeredDoctors[_doctorAddress]) {
+            return false;
+        }
+        
+        uint doctorId = GET_DOCTOR_ID(_doctorAddress);
+        
+        // Check for approved access requests for this specific record
+        uint[] memory requestIds = patientAccessRequests[_patientId];
+        for (uint i = 0; i < requestIds.length; i++) {
+            AccessRequest memory request = accessRequests[requestIds[i]];
+            if (request.doctorId == doctorId && 
+                request.medicalRecordIndex == _medicalRecordIndex &&
+                keccak256(bytes(request.status)) == keccak256(bytes("approved"))) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    // Get doctors with same speciality
+    function GET_DOCTORS_BY_SPECIALITY(string memory _speciality) public view returns (Doctor[] memory) {
+        uint count = 0;
+        for (uint i = 1; i <= doctorCount; i++) {
+            if (keccak256(bytes(doctors[i].speciality)) == keccak256(bytes(_speciality))) {
+                count++;
+            }
+        }
+        
+        Doctor[] memory specialityDoctors = new Doctor[](count);
+        uint counter = 0;
+        for (uint i = 1; i <= doctorCount; i++) {
+            if (keccak256(bytes(doctors[i].speciality)) == keccak256(bytes(_speciality))) {
+                specialityDoctors[counter] = doctors[i];
+                counter++;
+            }
+        }
+        
+        return specialityDoctors;
+    }
+
+     //--------------END OF ACCESS REQUEST SYSTEM------------------
 }

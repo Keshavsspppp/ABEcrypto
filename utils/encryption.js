@@ -211,23 +211,30 @@ class ABEEncryption {
   }
 
   /**
-   * Create access policy for medical records
+   * Create access policy for medical records with speciality-based access
+   * This policy allows access to:
+   * - The patient themselves
+   * - The doctor who created the record
+   * - Doctors with the same speciality as the creator
+   * - Admin
+   * - Doctors with approved access requests
    */
-  createMedicalRecordPolicy(patientId, doctorId = null, allowAdmin = true) {
-    const conditions = [
-      {
-        attribute: 'role',
-        operator: '===',
-        value: 'patient'
-      },
-      {
-        attribute: 'patientId',
-        operator: '===',
-        value: patientId
-      }
-    ];
+  createMedicalRecordPolicy(patientId, doctorId = null, doctorSpeciality = null, allowAdmin = true, approvedDoctorIds = []) {
+    const conditions = [];
 
-    // Add doctor access if specified
+    // Patient can access their own records
+    conditions.push({
+      attribute: 'role',
+      operator: '===',
+      value: 'patient'
+    });
+    conditions.push({
+      attribute: 'patientId',
+      operator: '===',
+      value: patientId
+    });
+
+    // Doctor who created the record can access
     if (doctorId) {
       conditions.push({
         attribute: 'role',
@@ -241,7 +248,35 @@ class ABEEncryption {
       });
     }
 
-    // Add admin access
+    // Doctors with same speciality can access
+    if (doctorSpeciality) {
+      conditions.push({
+        attribute: 'role',
+        operator: '===',
+        value: 'doctor'
+      });
+      conditions.push({
+        attribute: 'speciality',
+        operator: '===',
+        value: doctorSpeciality
+      });
+    }
+
+    // Doctors with approved access can access
+    if (approvedDoctorIds && approvedDoctorIds.length > 0) {
+      conditions.push({
+        attribute: 'role',
+        operator: '===',
+        value: 'doctor'
+      });
+      conditions.push({
+        attribute: 'doctorId',
+        operator: 'in',
+        value: approvedDoctorIds
+      });
+    }
+
+    // Admin can access
     if (allowAdmin) {
       conditions.push({
         attribute: 'role',
@@ -309,12 +344,13 @@ class ABEEncryption {
   /**
    * Get user attributes from wallet address and role
    */
-  getUserAttributes(address, role, patientId = null, doctorId = null) {
+  getUserAttributes(address, role, patientId = null, doctorId = null, speciality = null) {
     return {
       address: address?.toLowerCase(),
       role: role,
       patientId: patientId,
-      doctorId: doctorId
+      doctorId: doctorId,
+      speciality: speciality
     };
   }
 }
