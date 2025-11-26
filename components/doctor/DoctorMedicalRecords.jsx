@@ -65,6 +65,8 @@ import {
 import { Card, Button, Input, Select, Badge } from "../common";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useHealthcareContract } from "../../hooks/useContract";
+import useAccessRequests from "../../hooks/useAccessRequests";
+import AccessRequestModal from "../accessRequests/AccessRequestModal";
 import ipfsService from "../../utils/ipfs";
 import { truncateAddress } from "../../utils/helpers";
 import toast from "react-hot-toast";
@@ -517,6 +519,11 @@ const DoctorMedicalRecords = () => {
     isOpen: false,
     patient: null,
   });
+  const [accessRequestModal, setAccessRequestModal] = useState({
+    isOpen: false,
+    patient: null,
+    medicalRecordIndex: 0,
+  });
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -530,6 +537,8 @@ const DoctorMedicalRecords = () => {
     updatePatientMedicalHistory,
     getUserType,
   } = useHealthcareContract();
+  
+  const { requestAccess } = useAccessRequests();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -660,6 +669,25 @@ const DoctorMedicalRecords = () => {
       toast.error("Failed to refresh data");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleRequestAccess = (patient, medicalRecordIndex) => {
+    setAccessRequestModal({
+      isOpen: true,
+      patient,
+      medicalRecordIndex,
+    });
+  };
+
+  const handleSubmitAccessRequest = async (patientId, medicalRecordIndex, reason) => {
+    try {
+      await requestAccess(patientId, medicalRecordIndex, reason);
+      toast.success("Access request submitted successfully!");
+    } catch (error) {
+      console.error("Error submitting access request:", error);
+      toast.error("Failed to submit access request");
+      throw error;
     }
   };
 
@@ -1047,6 +1075,16 @@ const DoctorMedicalRecords = () => {
         onClose={() => setUpdateModal({ isOpen: false, patient: null })}
         patient={updateModal.patient}
         onSave={handleSaveRecord}
+      />
+
+      <AccessRequestModal
+        isOpen={accessRequestModal.isOpen}
+        onClose={() =>
+          setAccessRequestModal({ isOpen: false, patient: null, medicalRecordIndex: 0 })
+        }
+        patient={accessRequestModal.patient}
+        medicalRecordIndex={accessRequestModal.medicalRecordIndex}
+        onSubmit={handleSubmitAccessRequest}
       />
     </div>
   );

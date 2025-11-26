@@ -305,8 +305,7 @@ class IPFSService {
   }
 
   /**
-   * Upload encrypted medical record to IPFS
-   * Uses ABE + AES hybrid encryption
+   * Upload encrypted medical record to IPFS with speciality-based access
    */
   async uploadEncryptedMedicalRecord(
     medicalRecordData,
@@ -391,8 +390,10 @@ class IPFSService {
       // Create access policy for patient profile
       const accessPolicy = abeEncryption.createMedicalRecordPolicy(
         patientId,
-        doctorId,
-        true // allow admin
+        {
+          doctorId: doctorId,
+          allowAdmin: true
+        }
       );
 
       // Encrypt sensitive profile data
@@ -459,14 +460,18 @@ class IPFSService {
   }
 
   /**
-   * Encrypt medical history entry
+   * Encrypt medical history entry with speciality-based access
    */
-  async encryptMedicalHistoryEntry(entry, patientId, doctorId = null) {
+  async encryptMedicalHistoryEntry(entry, patientId, doctorId = null, doctorSpeciality = null, approvedDoctorIds = []) {
     try {
       const accessPolicy = abeEncryption.createMedicalRecordPolicy(
         patientId,
-        doctorId,
-        true
+        {
+          doctorId: doctorId,
+          doctorSpeciality: doctorSpeciality,
+          allowAdmin: true,
+          approvedDoctorIds: approvedDoctorIds
+        }
       );
 
       const encryptedPackage = await abeEncryption.encrypt(

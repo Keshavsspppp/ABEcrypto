@@ -184,7 +184,7 @@ export const useHealthcareContract = () => {
 
   // Doctor functions
   const registerDoctor = useCallback(
-    async (ipfsUrl, doctorAddress, name, userType, registrationFee) => {
+    async (ipfsUrl, doctorAddress, name, userType, registrationFee, speciality) => {
       if (!isConnected) {
         toast.error("Please connect your wallet");
         return;
@@ -248,13 +248,18 @@ export const useHealthcareContract = () => {
           return;
         }
 
+        if (!speciality || speciality.trim() === "") {
+          toast.error("Speciality is required");
+          return;
+        }
+
         // Estimate gas first to catch revert reasons
         try {
           await publicClient.estimateContractGas({
             address: CONTRACT_ADDRESS,
             abi: CONTRACT_ABI,
             functionName: "ADD_DOCTOR",
-            args: [ipfsUrl, doctorAddress, name, userType],
+            args: [ipfsUrl, doctorAddress, name, userType, speciality],
             value: parseEther(registrationFee.toString()),
             account: address,
           });
@@ -309,6 +314,7 @@ export const useHealthcareContract = () => {
           doctorAddress,
           name,
           userType,
+          speciality,
           registrationFee,
           feeInWei: parseEther(registrationFee.toString()).toString()
         });
@@ -317,7 +323,7 @@ export const useHealthcareContract = () => {
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "ADD_DOCTOR",
-          args: [ipfsUrl, doctorAddress, name, userType],
+          args: [ipfsUrl, doctorAddress, name, userType, speciality],
           value: parseEther(registrationFee.toString()),
         });
         toast.success("Doctor registered successfully! Waiting for approval.");
@@ -600,8 +606,9 @@ export const useHealthcareContract = () => {
             // Dynamic import to avoid circular dependency
             const { default: abeEncryption } = await import('../utils/encryption');
             
-            // Get doctor ID if user is a doctor - call contract directly to avoid circular dependency
+            // Get doctor ID and speciality if user is a doctor - call contract directly to avoid circular dependency
             let doctorId = null;
+            let doctorSpeciality = null;
             try {
               // Check if user exists
               const userExists = await publicClient.readContract({
@@ -629,6 +636,15 @@ export const useHealthcareContract = () => {
                     args: [address],
                   });
                   doctorId = Number(doctorIdResult);
+                  
+                  // Get doctor details to fetch speciality
+                  const doctorDetails = await publicClient.readContract({
+                    address: CONTRACT_ADDRESS,
+                    abi: CONTRACT_ABI,
+                    functionName: "GET_DOCTOR_DETAILS",
+                    args: [doctorId],
+                  });
+                  doctorSpeciality = doctorDetails.speciality;
                 }
               }
             } catch (e) {
@@ -636,11 +652,15 @@ export const useHealthcareContract = () => {
               console.warn('Could not get doctor ID for encryption:', e);
             }
             
-            // Create access policy
+            // Create access policy with speciality-based access
             const accessPolicy = abeEncryption.createMedicalRecordPolicy(
               patientId,
-              doctorId,
-              true // allow admin
+              {
+                doctorId: doctorId,
+                doctorSpeciality: doctorSpeciality,
+                allowAdmin: true,
+                approvedDoctorIds: []
+              }
             );
             
             // Encrypt the history entry
