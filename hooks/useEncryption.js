@@ -56,8 +56,10 @@ export const useEncryption = () => {
       setLoading(true);
       const accessPolicy = abeEncryption.createMedicalRecordPolicy(
         patientId,
-        doctorId,
-        true // allow admin
+        {
+          doctorId: doctorId,
+          allowAdmin: true
+        }
       );
 
       // Encrypt the entry
@@ -144,8 +146,10 @@ export const useEncryption = () => {
       setLoading(true);
       const accessPolicy = abeEncryption.createMedicalRecordPolicy(
         patientId,
-        doctorId,
-        true
+        {
+          doctorId: doctorId,
+          allowAdmin: true
+        }
       );
 
       const encryptedPackage = await abeEncryption.encrypt(

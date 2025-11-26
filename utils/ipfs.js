@@ -390,8 +390,10 @@ class IPFSService {
       // Create access policy for patient profile
       const accessPolicy = abeEncryption.createMedicalRecordPolicy(
         patientId,
-        doctorId,
-        true // allow admin
+        {
+          doctorId: doctorId,
+          allowAdmin: true
+        }
       );
 
       // Encrypt sensitive profile data
@@ -464,10 +466,12 @@ class IPFSService {
     try {
       const accessPolicy = abeEncryption.createMedicalRecordPolicy(
         patientId,
-        doctorId,
-        doctorSpeciality,
-        true, // allow admin
-        approvedDoctorIds
+        {
+          doctorId: doctorId,
+          doctorSpeciality: doctorSpeciality,
+          allowAdmin: true,
+          approvedDoctorIds: approvedDoctorIds
+        }
       );
 
       const encryptedPackage = await abeEncryption.encrypt(

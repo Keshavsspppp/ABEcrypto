@@ -655,10 +655,12 @@ export const useHealthcareContract = () => {
             // Create access policy with speciality-based access
             const accessPolicy = abeEncryption.createMedicalRecordPolicy(
               patientId,
-              doctorId,
-              doctorSpeciality, // Include doctor speciality
-              true, // allow admin
-              [] // no pre-approved doctors initially
+              {
+                doctorId: doctorId,
+                doctorSpeciality: doctorSpeciality,
+                allowAdmin: true,
+                approvedDoctorIds: []
+              }
             );
             
             // Encrypt the history entry

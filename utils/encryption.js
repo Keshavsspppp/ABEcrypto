@@ -218,8 +218,22 @@ class ABEEncryption {
    * - Doctors with the same speciality as the creator
    * - Admin
    * - Doctors with approved access requests
+   * 
+   * @param {number} patientId - Patient ID
+   * @param {object} options - Optional configuration
+   * @param {number} options.doctorId - ID of doctor creating the record
+   * @param {string} options.doctorSpeciality - Speciality of the doctor
+   * @param {boolean} options.allowAdmin - Whether to allow admin access (default: true)
+   * @param {number[]} options.approvedDoctorIds - IDs of doctors with approved access (default: [])
    */
-  createMedicalRecordPolicy(patientId, doctorId = null, doctorSpeciality = null, allowAdmin = true, approvedDoctorIds = []) {
+  createMedicalRecordPolicy(patientId, options = {}) {
+    const {
+      doctorId = null,
+      doctorSpeciality = null,
+      allowAdmin = true,
+      approvedDoctorIds = []
+    } = options;
+    
     const conditions = [];
 
     // Patient can access their own records

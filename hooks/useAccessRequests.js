@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useAccount, useWriteContract, useReadContract } from "wagmi";
+import { useAccount, useWriteContract, useReadContract, usePublicClient } from "wagmi";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../config/contract";
 import toast from "react-hot-toast";
 
@@ -7,6 +7,7 @@ export const useAccessRequests = () => {
   const { address, isConnected } = useAccount();
   const [loading, setLoading] = useState(false);
   const { writeContract } = useWriteContract();
+  const publicClient = usePublicClient();
 
   /**
    * Request access to a patient's medical record
@@ -106,12 +107,12 @@ export const useAccessRequests = () => {
    */
   const getPatientAccessRequests = useCallback(
     async (patientId) => {
-      if (!isConnected) {
+      if (!isConnected || !publicClient) {
         return [];
       }
 
       try {
-        const { data } = await useReadContract({
+        const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "GET_PATIENT_ACCESS_REQUESTS",
@@ -123,7 +124,7 @@ export const useAccessRequests = () => {
         return [];
       }
     },
-    [isConnected]
+    [isConnected, publicClient]
   );
 
   /**
@@ -131,12 +132,12 @@ export const useAccessRequests = () => {
    */
   const getDoctorAccessRequests = useCallback(
     async (doctorId) => {
-      if (!isConnected) {
+      if (!isConnected || !publicClient) {
         return [];
       }
 
       try {
-        const { data } = await useReadContract({
+        const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "GET_DOCTOR_ACCESS_REQUESTS",
@@ -148,7 +149,7 @@ export const useAccessRequests = () => {
         return [];
       }
     },
-    [isConnected]
+    [isConnected, publicClient]
   );
 
   /**
@@ -156,8 +157,12 @@ export const useAccessRequests = () => {
    */
   const hasAccessToRecord = useCallback(
     async (patientId, medicalRecordIndex, doctorAddress) => {
+      if (!publicClient) {
+        return false;
+      }
+
       try {
-        const { data } = await useReadContract({
+        const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "HAS_ACCESS_TO_RECORD",
@@ -169,7 +174,7 @@ export const useAccessRequests = () => {
         return false;
       }
     },
-    []
+    [publicClient]
   );
 
   /**
@@ -177,8 +182,12 @@ export const useAccessRequests = () => {
    */
   const getDoctorsBySpeciality = useCallback(
     async (speciality) => {
+      if (!publicClient) {
+        return [];
+      }
+
       try {
-        const { data } = await useReadContract({
+        const data = await publicClient.readContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "GET_DOCTORS_BY_SPECIALITY",
@@ -190,7 +199,7 @@ export const useAccessRequests = () => {
         return [];
       }
     },
-    []
+    [publicClient]
   );
 
   return {
