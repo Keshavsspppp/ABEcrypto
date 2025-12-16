@@ -65,6 +65,7 @@ import { useHealthcareContract } from "../../hooks/useContract";
 import ipfsService from "../../utils/ipfs";
 import { formatDate, formatTime, getRelativeTime } from "../../utils/helpers";
 import toast from "react-hot-toast";
+import abeEncryption from "../../utils/encryption";
 
 const AppointmentCard = ({
   appointment,
@@ -802,16 +803,41 @@ const PatientProfileModal = ({ patient, isOpen, onClose }) => {
               <FaNotesMedical className="h-6 w-6 text-purple-600" />
               Medical History
             </h3>
-            <div className="bg-white rounded-xl p-4 max-h-64 overflow-y-auto border border-purple-200">
-              <div className="space-y-3">
-                {patient.medicalHistory.map((record, index) => (
-                  <div
-                    key={index}
-                    className="bg-purple-50 p-3 rounded-lg border-l-4 border-purple-500"
-                  >
-                    <p className="text-purple-800 text-sm">{record}</p>
-                  </div>
-                ))}
+              <div className="bg-white rounded-xl p-4 max-h-64 overflow-y-auto border border-purple-200">
+                <div className="space-y-3">
+                  {patient.medicalHistory.map((record, index) => {
+                  const rawSpecialty =
+                    doctorProfile?.specialization ||
+                    doctorProfile?.speciality ||
+                    doctorData?.specialization ||
+                    doctorData?.speciality ||
+                    null;
+                  const specialtyAttr =
+                    typeof rawSpecialty === "string"
+                      ? rawSpecialty.trim().toLowerCase()
+                      : null;
+
+                  return (
+                    <div
+                      key={index}
+                      className="bg-purple-50 p-3 rounded-lg border-l-4 border-purple-500"
+                    >
+                      <RecordViewer
+                        record={record}
+                        doctorAttributes={abeEncryption.getUserAttributes(
+                          address,
+                          "doctor",
+                          patient.id,
+                          doctorData?.id ? Number(doctorData.id) : null,
+                          {
+                            specialty: specialtyAttr,
+                            accessLevel: "read",
+                          }
+                        )}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -826,6 +852,7 @@ const DoctorAppointments = () => {
   const [filteredAppointments, setFilteredAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [doctorData, setDoctorData] = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterDate, setFilterDate] = useState("all");
@@ -875,6 +902,23 @@ const DoctorAppointments = () => {
         ]);
 
         setDoctorData(doctorDetails);
+
+        if (doctorDetails?.IPFS_URL) {
+          try {
+            const hash = doctorDetails.IPFS_URL.replace(
+              "https://gateway.pinata.cloud/ipfs/",
+              ""
+            );
+            const profileData = await ipfsService.fetchFromIPFS(hash);
+            setDoctorProfile(profileData);
+          } catch (profileError) {
+            console.error("Error fetching doctor profile:", profileError);
+            setDoctorProfile(null);
+          }
+        } else {
+          setDoctorProfile(null);
+        }
+
         setAppointments(doctorAppointments || []);
         setFilteredAppointments(doctorAppointments || []);
       } catch (error) {
@@ -933,7 +977,140 @@ const DoctorAppointments = () => {
           default:
             return true;
         }
-      });
+});
+
+const RecordViewer = ({ record, doctorAttributes }) => {
+  const [text, setText] = useState(null);
+  const [isEncrypted, setIsEncrypted] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const formatOutput = (value) => {
+      if (value === null || value === undefined) return "";
+      return typeof value === "string" ? value : JSON.stringify(value);
+    };
+
+    const hydrateEnvelope = async (envelope) => {
+      if (!envelope?.ipfs?.hash || !envelope?.storage?.includes("ipfs")) {
+        return envelope;
+      }
+      try {
+        const remotePayload = await ipfsService.fetchFromIPFS(
+          envelope.ipfs.hash
+        );
+        if (remotePayload?.data) {
+          return {
+            ...envelope,
+            data: remotePayload.data,
+            meta: remotePayload.meta || envelope.meta,
+          };
+        }
+        return {
+          ...envelope,
+          data: remotePayload || envelope.data,
+        };
+      } catch (err) {
+        console.warn("Unable to hydrate medical record:", err);
+        return envelope;
+      }
+    };
+
+    const processRecord = async () => {
+      setText(null);
+      setError(null);
+      setIsEncrypted(false);
+
+      let parsed = record;
+      if (typeof parsed === "string") {
+        try {
+          parsed = JSON.parse(record);
+        } catch {
+          setText(formatOutput(record));
+          return;
+        }
+      }
+
+      if (
+        parsed?.version === "2" &&
+        parsed?.type === "medicalHistory" &&
+        parsed?.data
+      ) {
+        const envelope = await hydrateEnvelope(parsed);
+        if (envelope?.encrypted && envelope?.data?.encryptedData) {
+          setIsEncrypted(true);
+          try {
+            const decrypted = await abeEncryption.decrypt(
+              envelope.data,
+              doctorAttributes
+            );
+            if (!cancelled) {
+              const entry = decrypted?.entry ?? decrypted;
+              setText(formatOutput(entry));
+              setIsEncrypted(false);
+            }
+          } catch (err) {
+            if (!cancelled) {
+              setError(err);
+            }
+          }
+          return;
+        }
+        const entry = envelope?.data?.entry ?? envelope?.data ?? "";
+        setText(formatOutput(entry));
+        return;
+      }
+
+      if (parsed?.encryptedData && parsed?.encryptedKey) {
+        setIsEncrypted(true);
+        try {
+          const decrypted = await abeEncryption.decrypt(
+            parsed,
+            doctorAttributes
+          );
+          if (!cancelled) {
+            const entry = decrypted?.entry ?? decrypted;
+            setText(formatOutput(entry));
+            setIsEncrypted(false);
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setError(err);
+          }
+        }
+        return;
+      }
+
+      setText(formatOutput(parsed));
+    };
+
+    processRecord();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [record, doctorAttributes]);
+
+  if (text) {
+    return (
+      <p className="text-purple-800 text-sm whitespace-pre-wrap break-words">
+        {text}
+      </p>
+    );
+  }
+
+  if (isEncrypted && error) {
+    return (
+      <p className="text-purple-700 text-sm italic">
+        Protected medical entry. Only the patient and doctors from the
+        authorized specialty can view this record.
+      </p>
+    );
+  }
+
+  return <LoadingSpinner size="small" />;
+};
     }
 
     // Sort by date (newest first)
@@ -970,7 +1147,17 @@ const DoctorAppointments = () => {
         const medicalRecord = `${new Date().toLocaleDateString()} - Consultation: ${notes}${
           prescription ? ` | Prescription: ${prescription}` : ""
         }`;
-        await updatePatientMedicalHistory(appointment.patientId, medicalRecord);
+
+        const specialtyForRecord =
+          doctorProfile?.specialization ||
+          doctorProfile?.speciality ||
+          doctorData?.specialization ||
+          doctorData?.speciality ||
+          null;
+
+        await updatePatientMedicalHistory(appointment.patientId, medicalRecord, {
+          doctorSpecialty: specialtyForRecord,
+        });
       }
 
       // Refresh appointments

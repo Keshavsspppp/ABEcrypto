@@ -77,6 +77,36 @@ export const useEncryption = () => {
     }
   }, []);
 
+  const formatDecryptedEntry = (payload) => {
+    if (!payload) return "";
+
+    if (typeof payload === "string") {
+      return payload;
+    }
+
+    const baseEntry =
+      typeof payload.entry === "string"
+        ? payload.entry
+        : JSON.stringify(payload.entry ?? payload);
+    const updatedBy = payload.updatedBy;
+    const timestamp = payload.timestamp;
+
+    if (!updatedBy && !timestamp) {
+      return baseEntry;
+    }
+
+    let metaLine = "— Updated";
+    if (updatedBy) {
+      metaLine += ` by ${updatedBy}`;
+    }
+    if (timestamp) {
+      const readable = new Date(timestamp).toLocaleString();
+      metaLine += ` on ${readable}`;
+    }
+
+    return `${baseEntry}\n\n${metaLine}`;
+  };
+
   /**
    * Decrypt medical history entry
    */
@@ -109,7 +139,7 @@ export const useEncryption = () => {
         userAttributes
       );
 
-      return decrypted.entry;
+      return formatDecryptedEntry(decrypted);
     } catch (error) {
       console.error('Error decrypting medical history:', error);
       // If decryption fails, return the original (might be plain text)

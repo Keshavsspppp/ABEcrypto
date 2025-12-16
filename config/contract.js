@@ -2273,3 +2273,9 @@ export const CONTRACT_ABI = [
 export const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT;
 export const PINATA_GATEWAY =
   process.env.NEXT_PUBLIC_PINATA_GATEWAY || "https://gateway.pinata.cloud";
+
+// Debug: Log Pinata configuration (only in development)
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  console.log('[Pinata Config] JWT configured:', !!PINATA_JWT, PINATA_JWT ? `(length: ${PINATA_JWT.length})` : '');
+  console.log('[Pinata Config] Gateway:', PINATA_GATEWAY);
+}

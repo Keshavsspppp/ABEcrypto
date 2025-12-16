@@ -82,7 +82,3 @@ coverage/
 # =========================
 *.bak
 *.tmp
-
-
-web3/artifacts/
-web3/cache/

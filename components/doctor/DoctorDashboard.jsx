@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import {
   FiCalendar,
@@ -77,65 +77,87 @@ const DoctorDashboard = () => {
     getAllPatients,
   } = useHealthcareContract();
 
-  useEffect(() => {
-    const fetchDoctorData = async () => {
-      if (!isConnected || !address) {
+  const fetchDoctorData = useCallback(async () => {
+    if (!isConnected || !address) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Get doctor ID
+      const doctorId = await getDoctorId(address);
+      if (!doctorId) {
         setLoading(false);
         return;
       }
 
-      try {
-        setLoading(true);
+      // Fetch doctor data
+      const [doctorDetails, doctorAppointments, allPatients] =
+        await Promise.all([
+          getDoctorDetails(doctorId),
+          getDoctorAppointments(doctorId),
+          getAllPatients(),
+        ]);
+      console.log(doctorDetails);
+      setDoctorData(doctorDetails);
+      setAppointments(doctorAppointments || []);
 
-        // Get doctor ID
-        const doctorId = await getDoctorId(address);
-        if (!doctorId) {
-          setLoading(false);
-          return;
-        }
+      // Get recent patients from appointments
+      const patientIds = new Set();
+      doctorAppointments?.forEach((apt) => {
+        patientIds.add(apt.patientId?.toString());
+      });
 
-        // Fetch doctor data
-        const [doctorDetails, doctorAppointments, allPatients] =
-          await Promise.all([
-            getDoctorDetails(doctorId),
-            getDoctorAppointments(doctorId),
-            getAllPatients(),
-          ]);
-        console.log(doctorDetails);
-        setDoctorData(doctorDetails);
-        setAppointments(doctorAppointments || []);
+      const relevantPatients =
+        allPatients?.filter((patient) =>
+          patientIds.has(patient.id?.toString())
+        ) || [];
+      setRecentPatients(relevantPatients.slice(0, 5));
 
-        // Get recent patients from appointments
-        const patientIds = new Set();
-        doctorAppointments?.forEach((apt) => {
-          patientIds.add(apt.patientId?.toString());
-        });
+      // Calculate stats
+      const activeAppointments =
+        doctorAppointments?.filter((apt) => apt.isOpen)?.length || 0;
+      setStats({
+        totalAppointments: Number(doctorDetails.appointmentCount) || 0,
+        activeAppointments,
+        completedTreatments:
+          Number(doctorDetails.successfulTreatmentCount) || 0,
+        totalPatients: patientIds.size,
+      });
+    } catch (error) {
+      console.error("Error fetching doctor data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    isConnected,
+    address,
+    getDoctorId,
+    getDoctorDetails,
+    getDoctorAppointments,
+    getAllPatients,
+  ]);
 
-        const relevantPatients =
-          allPatients?.filter((patient) =>
-            patientIds.has(patient.id?.toString())
-          ) || [];
-        setRecentPatients(relevantPatients.slice(0, 5));
-
-        // Calculate stats
-        const activeAppointments =
-          doctorAppointments?.filter((apt) => apt.isOpen)?.length || 0;
-        setStats({
-          totalAppointments: Number(doctorDetails.appointmentCount) || 0,
-          activeAppointments,
-          completedTreatments:
-            Number(doctorDetails.successfulTreatmentCount) || 0,
-          totalPatients: patientIds.size,
-        });
-      } catch (error) {
-        console.error("Error fetching doctor data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+  useEffect(() => {
     fetchDoctorData();
-  }, [isConnected, address]);
+  }, [fetchDoctorData]);
+
+  // If redirected here with ?refresh=true (after registration), trigger a re-fetch
+  useEffect(() => {
+    const { refresh } = router.query || {};
+    if (refresh === "true" && isConnected && address) {
+      // Remove the refresh param from URL so we don't loop
+      router.replace("/doctor/dashboard", undefined, { shallow: true });
+
+      const timeoutId = setTimeout(() => {
+        fetchDoctorData();
+      }, 2000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [router, router.query, isConnected, address, fetchDoctorData]);
 
   const formatDate = (timestamp) => {
     // Convert BigInt to Number for date operations

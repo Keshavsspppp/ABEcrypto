@@ -19,7 +19,7 @@ function MyApp({ Component, pageProps }) {
           name="description"
           content="A powerful Web3 Health Care Management DApp built with Next.js, RainbowKit, and Wagmi"
         />
-        <link rel="icon" href="/logo.png" />
+        <link rel="icon" href="/heelll.jpg" />
       </Head>
       <QueryClientProvider client={queryClient}>
         <WagmiConfig config={config}>

@@ -236,7 +236,10 @@ const PatientRegistration = () => {
 
       console.log("Registration transaction:", tx);
       toast.success("Registration successful! Welcome to HealthChain!");
-      // router.push("/patient/dashboard");
+
+      // After successful registration, navigate to dashboard and trigger a data refresh
+      // The PatientDashboard already listens for ?refresh=true and will re-fetch on-chain data
+      router.push("/patient/dashboard?refresh=true");
     } catch (error) {
       console.error("Registration error:", error);
 

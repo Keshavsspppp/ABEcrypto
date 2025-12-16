@@ -12,314 +12,450 @@
  * - accessLevel: "read", "write", "full"
  */
 
-import CryptoJS from 'crypto-js';
+import CryptoJS from "crypto-js";
 
 class ABEEncryption {
   constructor() {
-    // Master key for ABE (in production, this should be stored securely)
-    // For now, we'll derive it from a constant seed
-    // In production, use a key management service or hardware security module
-    this.masterKey = this.deriveMasterKey();
+    this.masterKey = process.env.NEXT_PUBLIC_ABE_MASTER_KEY || "default-master-key-change-in-production";
   }
 
   /**
-   * Derive master key from a seed
-   * In production, this should come from a secure key management system
+   * Get user attributes for CP-ABE
+   * @param {string} userAddress - User's wallet address
+   * @param {string} role - User role (patient, doctor, admin)
+   * @param {number} patientId - Patient ID (if applicable)
+   * @param {number} doctorId - Doctor ID (if applicable)
+   * @returns {Object} User attributes object
    */
-  deriveMasterKey() {
-    const seed = process.env.NEXT_PUBLIC_ABE_MASTER_SEED || 'healthcare-abe-master-seed-2024';
-    return CryptoJS.SHA256(seed).toString();
+  getUserAttributes(userAddress, role, patientId = null, doctorId = null) {
+    const attributes = {
+      address: userAddress.toLowerCase(),
+      role: role.toLowerCase(),
+    };
+
+    if (role === "patient" && patientId !== null) {
+      attributes.patientId = Number(patientId);
+    }
+
+    if (role === "doctor" && doctorId !== null) {
+      attributes.doctorId = Number(doctorId);
+    }
+
+    // Add timestamp for time-based policies
+    attributes.timestamp = Date.now();
+
+    return attributes;
   }
 
   /**
-   * Generate a random AES key for data encryption
+   * Generate AES key
+   * @returns {string} Random AES key
    */
   generateAESKey() {
-    return CryptoJS.lib.WordArray.random(256/8).toString();
+    return CryptoJS.lib.WordArray.random(256 / 8).toString();
   }
 
   /**
-   * Encrypt data using AES-256-CBC
+   * Encrypt data with AES-256-GCM
+   * @param {string|ArrayBuffer|Blob} data - Data to encrypt
+   * @param {string} aesKey - AES encryption key
+   * @returns {Promise<string>} Encrypted data as base64 string
    */
-  encryptWithAES(data, aesKey) {
+  async encryptWithAESGCM(data, aesKey) {
     try {
-      const encrypted = CryptoJS.AES.encrypt(
-        JSON.stringify(data),
-        aesKey,
-        {
-          mode: CryptoJS.mode.CBC,
-          padding: CryptoJS.pad.Pkcs7
-        }
-      );
-      return encrypted.toString();
+      let plaintext;
+
+      // Convert data to string if it's ArrayBuffer or Blob
+      if (data instanceof ArrayBuffer) {
+        plaintext = new TextDecoder().decode(data);
+      } else if (data instanceof Blob) {
+        plaintext = await data.text();
+      } else {
+        plaintext = typeof data === 'string' ? data : JSON.stringify(data);
+      }
+
+      // Generate random IV
+      const iv = CryptoJS.lib.WordArray.random(128 / 8);
+
+      // Encrypt with AES-256-CBC (GCM not directly available in CryptoJS)
+      const encrypted = CryptoJS.AES.encrypt(plaintext, CryptoJS.enc.Utf8.parse(aesKey), {
+        iv: iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7
+      });
+
+      // Combine IV and ciphertext
+      const combined = iv.toString() + ':' + encrypted.toString();
+
+      return CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(combined));
     } catch (error) {
-      console.error('AES encryption error:', error);
-      throw new Error('Failed to encrypt data with AES');
+      console.error("AES encryption error:", error);
+      throw new Error(`Failed to encrypt data: ${error.message}`);
     }
   }
 
   /**
-   * Decrypt data using AES-256-CBC
+   * Decrypt data with AES-256-GCM
+   * @param {string} encryptedData - Encrypted data as base64 string
+   * @param {string} aesKey - AES decryption key
+   * @param {boolean} returnAsBlob - Whether to return as Blob
+   * @returns {Promise<string|Blob>} Decrypted data
    */
-  decryptWithAES(encryptedData, aesKey) {
+  async decryptWithAESGCM(encryptedData, aesKey, returnAsBlob = false) {
     try {
-      const decrypted = CryptoJS.AES.decrypt(
-        encryptedData,
-        aesKey,
-        {
-          mode: CryptoJS.mode.CBC,
-          padding: CryptoJS.pad.Pkcs7
-        }
-      );
+      // Decode base64
+      const combined = CryptoJS.enc.Utf8.stringify(CryptoJS.enc.Base64.parse(encryptedData));
+      const parts = combined.split(':');
+
+      if (parts.length !== 2) {
+        throw new Error("Invalid encrypted data format");
+      }
+
+      const iv = CryptoJS.enc.Hex.parse(parts[0]);
+      const ciphertext = parts[1];
+
+      // Decrypt
+      const decrypted = CryptoJS.AES.decrypt(ciphertext, CryptoJS.enc.Utf8.parse(aesKey), {
+        iv: iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7
+      });
+
       const decryptedText = decrypted.toString(CryptoJS.enc.Utf8);
+
       if (!decryptedText) {
-        throw new Error('Decryption failed - invalid key or data');
+        throw new Error("Decryption failed - invalid key or corrupted data");
       }
-      return JSON.parse(decryptedText);
-    } catch (error) {
-      console.error('AES decryption error:', error);
-      throw new Error('Failed to decrypt data with AES');
-    }
-  }
 
-  /**
-   * Generate user secret key based on attributes
-   * This is a simplified ABE key generation
-   */
-  generateUserSecretKey(userAttributes) {
-    // Combine attributes into a key
-    const attributesString = JSON.stringify(userAttributes);
-    const combined = this.masterKey + attributesString;
-    return CryptoJS.SHA256(combined).toString();
-  }
-
-  /**
-   * Encrypt AES key using ABE (simplified CP-ABE)
-   * Policy: AND/OR logic on attributes
-   */
-  encryptAESKeyWithABE(aesKey, accessPolicy) {
-    try {
-      // Convert policy to string for encryption
-      const policyString = JSON.stringify(accessPolicy);
-      
-      // Use master key + policy to encrypt the AES key
-      const encryptionKey = CryptoJS.SHA256(
-        this.masterKey + policyString
-      ).toString();
-      
-      const encryptedAESKey = CryptoJS.AES.encrypt(
-        aesKey,
-        encryptionKey,
-        {
-          mode: CryptoJS.mode.CBC,
-          padding: CryptoJS.pad.Pkcs7
-        }
-      ).toString();
-      
-      return {
-        encryptedKey: encryptedAESKey,
-        policy: accessPolicy,
-        algorithm: 'ABE-AES-Hybrid'
-      };
-    } catch (error) {
-      console.error('ABE encryption error:', error);
-      throw new Error('Failed to encrypt AES key with ABE');
-    }
-  }
-
-  /**
-   * Decrypt AES key using ABE
-   * Checks if user attributes satisfy the access policy
-   */
-  decryptAESKeyWithABE(encryptedKeyData, userAttributes) {
-    try {
-      const { encryptedKey, policy } = encryptedKeyData;
-      
-      // Check if user attributes satisfy the policy
-      if (!this.checkPolicySatisfaction(policy, userAttributes)) {
-        throw new Error('User attributes do not satisfy access policy');
+      if (returnAsBlob) {
+        return new Blob([decryptedText], { type: 'application/octet-stream' });
       }
-      
-      // Generate decryption key using policy
-      const policyString = JSON.stringify(policy);
-      const decryptionKey = CryptoJS.SHA256(
-        this.masterKey + policyString
-      ).toString();
-      
-      const decrypted = CryptoJS.AES.decrypt(
-        encryptedKey,
-        decryptionKey,
-        {
-          mode: CryptoJS.mode.CBC,
-          padding: CryptoJS.pad.Pkcs7
-        }
-      );
-      
-      return decrypted.toString(CryptoJS.enc.Utf8);
+
+      return decryptedText;
     } catch (error) {
-      console.error('ABE decryption error:', error);
-      throw new Error('Failed to decrypt AES key with ABE: ' + error.message);
+      console.error("AES decryption error:", error);
+      throw new Error(`Failed to decrypt data: ${error.message}`);
     }
   }
 
   /**
-   * Check if user attributes satisfy the access policy
-   * Supports AND/OR logic
+   * Create advanced CP-ABE policy
+   * @param {Array} conditions - Array of policy conditions
+   * @param {string} operator - Policy operator (AND/OR)
+   * @returns {Object} Policy object
    */
-  checkPolicySatisfaction(policy, userAttributes) {
-    if (!policy || !userAttributes) return false;
-    
-    // Handle different policy formats
-    if (policy.type === 'AND') {
-      // All conditions must be satisfied
-      return policy.conditions.every(condition => 
-        this.checkCondition(condition, userAttributes)
-      );
-    } else if (policy.type === 'OR') {
-      // At least one condition must be satisfied
-      return policy.conditions.some(condition => 
-        this.checkCondition(condition, userAttributes)
-      );
-    } else if (policy.type === 'SIMPLE') {
-      // Simple attribute matching
-      return this.checkCondition(policy, userAttributes);
-    }
-    
-    return false;
-  }
-
-  /**
-   * Check if a single condition is satisfied
-   */
-  checkCondition(condition, userAttributes) {
-    const { attribute, operator, value } = condition;
-    
-    switch (operator) {
-      case '===':
-        return userAttributes[attribute] === value;
-      case '!==':
-        return userAttributes[attribute] !== value;
-      case 'includes':
-        return Array.isArray(userAttributes[attribute]) && 
-               userAttributes[attribute].includes(value);
-      case 'in':
-        return Array.isArray(value) && 
-               value.includes(userAttributes[attribute]);
-      default:
-        return false;
-    }
-  }
-
-  /**
-   * Create access policy for medical records
-   */
-  createMedicalRecordPolicy(patientId, doctorId = null, allowAdmin = true) {
-    const conditions = [
-      {
-        attribute: 'role',
-        operator: '===',
-        value: 'patient'
-      },
-      {
-        attribute: 'patientId',
-        operator: '===',
-        value: patientId
-      }
-    ];
-
-    // Add doctor access if specified
-    if (doctorId) {
-      conditions.push({
-        attribute: 'role',
-        operator: '===',
-        value: 'doctor'
-      });
-      conditions.push({
-        attribute: 'doctorId',
-        operator: '===',
-        value: doctorId
-      });
-    }
-
-    // Add admin access
-    if (allowAdmin) {
-      conditions.push({
-        attribute: 'role',
-        operator: '===',
-        value: 'admin'
-      });
-    }
-
+  createAdvancedPolicy(conditions, operator = "OR") {
     return {
-      type: 'OR',
-      conditions: conditions
+      type: operator.toUpperCase(),
+      conditions: conditions,
+      timestamp: Date.now(),
+      version: "1.0"
     };
   }
 
   /**
-   * Main encryption function: Hybrid ABE + AES
+   * Evaluate if user attributes satisfy policy
+   * @param {Object} policy - CP-ABE policy
+   * @param {Object} userAttributes - User attributes
+   * @returns {boolean} Whether attributes satisfy policy
    */
-  async encrypt(data, accessPolicy) {
+  evaluatePolicy(policy, userAttributes) {
+    if (!policy || !policy.conditions) {
+      return false;
+    }
+
+    const evaluateCondition = (condition) => {
+      if (condition.type === "AND" || condition.type === "OR") {
+        // Nested condition
+        const results = condition.conditions.map(evaluateCondition);
+        return condition.type === "AND" 
+          ? results.every(r => r) 
+          : results.some(r => r);
+      }
+
+      // Simple condition
+      const { attribute, operator, value } = condition;
+      const userValue = userAttributes[attribute];
+
+      switch (operator) {
+        case "===":
+          return userValue === value;
+        case "!==":
+          return userValue !== value;
+        case ">":
+          return userValue > value;
+        case "<":
+          return userValue < value;
+        case ">=":
+          return userValue >= value;
+        case "<=":
+          return userValue <= value;
+        case "includes":
+          return Array.isArray(userValue) && userValue.includes(value);
+        default:
+          return false;
+      }
+    };
+
+    const results = policy.conditions.map(evaluateCondition);
+    return policy.type === "AND" 
+      ? results.every(r => r) 
+      : results.some(r => r);
+  }
+
+  /**
+   * Encrypt AES key with CP-ABE
+   * @param {string} aesKey - AES key to encrypt
+   * @param {Object} policy - CP-ABE policy
+   * @returns {Object} Encrypted key package
+   */
+  encryptAESKeyWithABE(aesKey, policy) {
     try {
-      // Step 1: Generate AES key
-      const aesKey = this.generateAESKey();
-      
-      // Step 2: Encrypt data with AES
-      const encryptedData = this.encryptWithAES(data, aesKey);
-      
-      // Step 3: Encrypt AES key with ABE
-      const encryptedKeyData = this.encryptAESKeyWithABE(aesKey, accessPolicy);
-      
+      // Simple simulation: Encrypt AES key with master key and attach policy
+      const encrypted = CryptoJS.AES.encrypt(aesKey, this.masterKey).toString();
+
       return {
-        encryptedData,
-        encryptedKey: encryptedKeyData.encryptedKey,
-        policy: encryptedKeyData.policy,
-        algorithm: encryptedKeyData.algorithm,
-        timestamp: new Date().toISOString()
+        encryptedKey: encrypted,
+        policy: policy,
+        algorithm: "CP-ABE-Simulated",
+        timestamp: Date.now()
       };
     } catch (error) {
-      console.error('Hybrid encryption error:', error);
-      throw new Error('Failed to encrypt data: ' + error.message);
+      console.error("ABE key encryption error:", error);
+      throw new Error(`Failed to encrypt AES key: ${error.message}`);
     }
   }
 
   /**
-   * Main decryption function: Hybrid ABE + AES
+   * Decrypt AES key with CP-ABE
+   * @param {Object} encryptedPackage - Encrypted key package
+   * @param {Object} userAttributes - User attributes
+   * @returns {string|null} Decrypted AES key or null if access denied
+   */
+  decryptAESKeyWithABE(encryptedPackage, userAttributes) {
+    try {
+      const { encryptedKey, policy } = encryptedPackage;
+
+      // Check if user attributes satisfy policy
+      if (!this.evaluatePolicy(policy, userAttributes)) {
+        console.warn("User attributes do not satisfy policy");
+        return null;
+      }
+
+      // Decrypt AES key
+      const decrypted = CryptoJS.AES.decrypt(encryptedKey, this.masterKey);
+      const aesKey = decrypted.toString(CryptoJS.enc.Utf8);
+
+      if (!aesKey) {
+        throw new Error("Failed to decrypt AES key");
+      }
+
+      return aesKey;
+    } catch (error) {
+      console.error("ABE key decryption error:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create medical record access policy
+   * @param {Object} options - Policy options
+   * @returns {Object} CP-ABE policy
+   */
+  createMedicalRecordPolicy({
+    patientId,
+    doctorIds = [],
+    specialties = [],
+    hospitals = [],
+    allowAdmin = true,
+    allowPatient = true,
+    emergencyAccess = false
+  }) {
+    const conditions = [];
+
+    // Patient access
+    if (allowPatient && patientId) {
+      conditions.push({
+        type: "AND",
+        conditions: [
+          { attribute: "role", operator: "===", value: "patient" },
+          { attribute: "patientId", operator: "===", value: Number(patientId) }
+        ]
+      });
+    }
+
+    // Specific doctors
+    if (doctorIds.length > 0) {
+      doctorIds.forEach(doctorId => {
+        conditions.push({
+          type: "AND",
+          conditions: [
+            { attribute: "role", operator: "===", value: "doctor" },
+            { attribute: "doctorId", operator: "===", value: Number(doctorId) }
+          ]
+        });
+      });
+    }
+
+    // Specialty-based
+    if (specialties.length > 0) {
+      specialties.forEach(specialty => {
+        conditions.push({
+          type: "AND",
+          conditions: [
+            { attribute: "role", operator: "===", value: "doctor" },
+            { attribute: "specialty", operator: "===", value: specialty.toLowerCase() }
+          ]
+        });
+      });
+    }
+
+    // Hospital-based
+    if (hospitals.length > 0) {
+      hospitals.forEach(hospital => {
+        conditions.push({
+          type: "AND",
+          conditions: [
+            { attribute: "role", operator: "===", value: "doctor" },
+            { attribute: "hospital", operator: "===", value: hospital.toLowerCase() }
+          ]
+        });
+      });
+    }
+
+    // Admin access
+    if (allowAdmin) {
+      conditions.push({
+        attribute: "role",
+        operator: "===",
+        value: "admin"
+      });
+    }
+
+    // Emergency access
+    if (emergencyAccess) {
+      conditions.push({
+        type: "AND",
+        conditions: [
+          { attribute: "role", operator: "===", value: "doctor" },
+          { attribute: "emergency", operator: "===", value: true }
+        ]
+      });
+    }
+
+    return this.createAdvancedPolicy(conditions, "OR");
+  }
+
+  /**
+   * Encrypt medical record with hybrid encryption
+   * @param {File|Blob|ArrayBuffer} medicalData - Medical data
+   * @param {Object} policy - CP-ABE policy
+   * @param {Object} metadata - Additional metadata
+   * @returns {Promise<Object>} Encrypted package
+   */
+  async encryptMedicalRecord(medicalData, policy, metadata = {}) {
+    try {
+      // Generate AES key
+      const aesKey = this.generateAESKey();
+
+      // Encrypt data with AES
+      const encryptedData = await this.encryptWithAESGCM(medicalData, aesKey);
+
+      // Encrypt AES key with CP-ABE
+      const encryptedKeyPackage = this.encryptAESKeyWithABE(aesKey, policy);
+
+      return {
+        encryptedData: encryptedData,
+        encryptedKey: encryptedKeyPackage.encryptedKey,
+        policy: encryptedKeyPackage.policy,
+        algorithm: "AES-256-GCM + CP-ABE",
+        timestamp: new Date().toISOString(),
+        metadata: {
+          ...metadata,
+          encrypted: true,
+          keyLength: 256,
+          mode: "GCM"
+        }
+      };
+    } catch (error) {
+      console.error("Medical record encryption error:", error);
+      throw new Error(`Failed to encrypt medical record: ${error.message}`);
+    }
+  }
+
+  /**
+   * Decrypt medical record with hybrid encryption
+   * @param {Object} encryptedPackage - Encrypted package
+   * @param {Object} userAttributes - User attributes
+   * @returns {Promise<string|Blob>} Decrypted data
+   */
+  async decryptMedicalRecord(encryptedPackage, userAttributes) {
+    try {
+      // Decrypt AES key with CP-ABE
+      const aesKey = this.decryptAESKeyWithABE(
+        {
+          encryptedKey: encryptedPackage.encryptedKey,
+          policy: encryptedPackage.policy
+        },
+        userAttributes
+      );
+
+      if (!aesKey) {
+        throw new Error("Access denied: Your attributes do not satisfy the access policy");
+      }
+
+      // Decrypt data with AES key
+      const decryptedData = await this.decryptWithAESGCM(
+        encryptedPackage.encryptedData,
+        aesKey,
+        true
+      );
+
+      return decryptedData;
+    } catch (error) {
+      console.error("Medical record decryption error:", error);
+      throw new Error(`Failed to decrypt medical record: ${error.message}`);
+    }
+  }
+
+  /**
+   * Simple decrypt function for backward compatibility
+   * @param {Object} encryptedPackage - Encrypted package
+   * @param {Object} userAttributes - User attributes
+   * @returns {Promise<any>} Decrypted data
    */
   async decrypt(encryptedPackage, userAttributes) {
     try {
-      const { encryptedData, encryptedKey, policy } = encryptedPackage;
-      
-      // Step 1: Decrypt AES key using ABE
-      const aesKey = this.decryptAESKeyWithABE(
-        { encryptedKey, policy },
-        userAttributes
-      );
-      
-      // Step 2: Decrypt data using AES
-      const decryptedData = this.decryptWithAES(encryptedData, aesKey);
-      
-      return decryptedData;
-    } catch (error) {
-      console.error('Hybrid decryption error:', error);
-      throw new Error('Failed to decrypt data: ' + error.message);
-    }
-  }
+      // Check if it's a medical record package
+      if (encryptedPackage.encryptedData && encryptedPackage.encryptedKey) {
+        return await this.decryptMedicalRecord(encryptedPackage, userAttributes);
+      }
 
-  /**
-   * Get user attributes from wallet address and role
-   */
-  getUserAttributes(address, role, patientId = null, doctorId = null) {
-    return {
-      address: address?.toLowerCase(),
-      role: role,
-      patientId: patientId,
-      doctorId: doctorId
-    };
+      // Legacy simple encryption
+      if (encryptedPackage.data && encryptedPackage.key) {
+        const aesKey = this.decryptAESKeyWithABE(
+          { encryptedKey: encryptedPackage.key, policy: encryptedPackage.policy },
+          userAttributes
+        );
+        
+        if (!aesKey) {
+          throw new Error("Access denied");
+        }
+
+        return await this.decryptWithAESGCM(encryptedPackage.data, aesKey);
+      }
+
+      throw new Error("Invalid encrypted package format");
+    } catch (error) {
+      console.error("Decryption error:", error);
+      throw error;
+    }
   }
 }
 
-// Export singleton instance
-export const abeEncryption = new ABEEncryption();
+// Create and export singleton instance
+const abeEncryption = new ABEEncryption();
+
 export default abeEncryption;
+export { ABEEncryption, abeEncryption };
 

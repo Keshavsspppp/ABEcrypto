@@ -38,7 +38,6 @@ contract Healthcare {
         uint date;
     }
     
-
     struct Appointment {
         uint id;
         uint patientId;
@@ -91,6 +90,29 @@ contract Healthcare {
         string categoryType;
     }
 
+    // Encrypted Medical Record structures
+    struct EncryptedMedicalRecord {
+        uint256 id;
+        uint256 patientId;
+        string ipfsHash;
+        string encryptedAESKey;
+        string accessPolicy;
+        uint256 timestamp;
+        address uploadedBy;
+        bool isActive;
+    }
+    
+    struct AccessRequest {
+        uint256 id;
+        uint256 recordId;
+        uint256 doctorId;
+        uint256 patientId;
+        string reason;
+        uint256 timestamp;
+        bool isPending;
+        bool isApproved;
+    }
+
     AllUserStruck[] getAllUsers;
 
     mapping(address => User) userList;
@@ -105,19 +127,28 @@ contract Healthcare {
     mapping(uint => Appointment) public appointments;
     mapping(address => bool) public registeredDoctors;
     mapping(address => bool) public registeredPatients;
+    mapping(address => uint) public doctorAddressToId;
+    mapping(address => uint) public patientAddressToId;
+    mapping(uint256 => address) public patientIdToAddress;
+    mapping(uint256 => address) public doctorIdToAddress;
+    
+    // Encrypted medical records mappings
+    mapping(uint256 => EncryptedMedicalRecord[]) public patientMedicalRecords;
+    mapping(uint256 => AccessRequest[]) public patientAccessRequests;
+    mapping(uint256 => mapping(uint256 => bool)) public doctorRecordAccess;
 
     uint public medicineCount;
     uint public doctorCount;
     uint public patientCount;
     uint public prescriptionCount;
     uint public appointmentCount;
+    uint256 public accessRequestCounter;
 
     address payable public admin;
     uint public registrationDoctorFee = 0.0025 ether;
     uint public registrationPatientFee = 0.00025 ether;
     uint public appointmentFee = 0.0025 ether;
   
-
    //MEDICATION
     event MEDICINE_ADDED(uint id, string url, string location);
     event MEDICINE_LOCATION(uint id, string newLocation);
@@ -126,22 +157,25 @@ contract Healthcare {
     event MEDICINE_QUANTITY(uint id, uint quantity);
     event MEDICINE_ACTIVE(uint id, bool active);    
     event MEDICINE_BOUGHT(uint patientId, uint medicineId);
-    //END MEDICATION
-
+    
     //DOCTOR
-     event DOCTOR_REGISTERED(uint id, string IPFS_URL, address accountAddress);
-     event APPROVE_DOCTOR_STATUSD(uint id, bool isApproved);
-    //END DOCTOR
-
-   //PATIENTS
+    event DOCTOR_REGISTERED(uint id, string IPFS_URL, address accountAddress);
+    event APPROVE_DOCTOR_STATUSD(uint id, bool isApproved);
+    
+    //PATIENTS
     event PATIENT_ADDED(uint id, string _IPFS_URL, string[] medicalHistory);
     event NOTIFICATiON_SENT(address indexed user, string message, uint timestamp);
-   //END PATIENTS
    
     //PRESCRIBED
     event MEDICINE_PRESCRIBED(uint id, uint medicineId, uint patientId, uint doctorId, uint date);
     event APPOINTMENT_BOOKED(uint id, uint patientId, uint doctorId, uint date);
-    //END PRESCRIBED
+    
+    // Encrypted Medical Records Events
+    event MedicalRecordUploaded(uint256 indexed patientId, uint256 recordId, string ipfsHash);
+    event AccessRequested(uint256 indexed requestId, uint256 doctorId, uint256 patientId, uint256 recordId);
+    event AccessGranted(uint256 indexed requestId, uint256 doctorId, uint256 patientId);
+    event AccessDenied(uint256 indexed requestId, uint256 doctorId, uint256 patientId);
+    event RecordUpdated(uint256 indexed patientId, uint256 recordId, address updatedBy);
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can perform this action");
@@ -156,6 +190,198 @@ contract Healthcare {
     constructor() {
         admin = payable(msg.sender);
     }
+
+    //============ ENCRYPTED MEDICAL RECORDS FUNCTIONS ============//
+    
+    // Upload encrypted medical record
+    function uploadEncryptedMedicalRecord(
+        uint256 _patientId,
+        string memory _ipfsHash,
+        string memory _encryptedAESKey,
+        string memory _accessPolicy
+    ) public returns (uint256) {
+        require(bytes(_ipfsHash).length > 0, "IPFS hash required");
+        require(bytes(_encryptedAESKey).length > 0, "Encrypted AES key required");
+        
+        // Verify caller is patient or approved doctor with access
+        require(
+            patientIdToAddress[_patientId] == msg.sender || 
+            (doctors[doctorAddressToId[msg.sender]].isApproved && doctorRecordAccess[_patientId][doctorAddressToId[msg.sender]]),
+            "Unauthorized: Only patient or approved doctor can upload"
+        );
+        
+        uint256 recordId = patientMedicalRecords[_patientId].length;
+        
+        patientMedicalRecords[_patientId].push(EncryptedMedicalRecord({
+            id: recordId,
+            patientId: _patientId,
+            ipfsHash: _ipfsHash,
+            encryptedAESKey: _encryptedAESKey,
+            accessPolicy: _accessPolicy,
+            timestamp: block.timestamp,
+            uploadedBy: msg.sender,
+            isActive: true
+        }));
+        
+        ADD_NOTIFICATION(patientIdToAddress[_patientId], "New encrypted medical record uploaded", "Medical Record");
+        
+        emit MedicalRecordUploaded(_patientId, recordId, _ipfsHash);
+        return recordId;
+    }
+    
+    // Get patient encrypted records
+    function getPatientEncryptedRecords(uint256 _patientId) 
+        public 
+        view 
+        returns (EncryptedMedicalRecord[] memory) 
+    {
+        return patientMedicalRecords[_patientId];
+    }
+    
+    // Get specific encrypted record
+    function getEncryptedRecord(uint256 _patientId, uint256 _recordId)
+        public
+        view
+        returns (EncryptedMedicalRecord memory)
+    {
+        require(_recordId < patientMedicalRecords[_patientId].length, "Record not found");
+        return patientMedicalRecords[_patientId][_recordId];
+    }
+    
+    // Doctor requests access to medical record
+    function requestRecordAccess(
+        uint256 _patientId,
+        uint256 _recordId,
+        string memory _reason
+    ) public {
+        uint256 doctorId = doctorAddressToId[msg.sender];
+        require(doctorId > 0, "Not a registered doctor");
+        require(doctors[doctorId].isApproved, "Doctor not approved");
+        require(_recordId < patientMedicalRecords[_patientId].length, "Record not found");
+        
+        accessRequestCounter++;
+        
+        patientAccessRequests[_patientId].push(AccessRequest({
+            id: accessRequestCounter,
+            recordId: _recordId,
+            doctorId: doctorId,
+            patientId: _patientId,
+            reason: _reason,
+            timestamp: block.timestamp,
+            isPending: true,
+            isApproved: false
+        }));
+        
+        ADD_NOTIFICATION(patientIdToAddress[_patientId], "Doctor requested access to your medical record", "Access Request");
+        ADD_NOTIFICATION(msg.sender, "Access request submitted to patient", "Access Request");
+        
+        emit AccessRequested(accessRequestCounter, doctorId, _patientId, _recordId);
+    }
+    
+    // Patient approves access request
+    function approveAccessRequest(uint256 _requestIndex) public {
+        uint256 patientId = patientAddressToId[msg.sender];
+        require(patientId > 0, "Not a registered patient");
+        require(_requestIndex < patientAccessRequests[patientId].length, "Request not found");
+        
+        AccessRequest storage request = patientAccessRequests[patientId][_requestIndex];
+        require(request.isPending, "Request already processed");
+        
+        request.isPending = false;
+        request.isApproved = true;
+        
+        // Grant doctor access to all patient records
+        doctorRecordAccess[patientId][request.doctorId] = true;
+        
+        ADD_NOTIFICATION(msg.sender, "You approved doctor's access request", "Access Request");
+        ADD_NOTIFICATION(doctorIdToAddress[request.doctorId], "Patient approved your access request", "Access Request");
+        
+        emit AccessGranted(request.id, request.doctorId, patientId);
+    }
+    
+    // Patient denies access request
+    function denyAccessRequest(uint256 _requestIndex) public {
+        uint256 patientId = patientAddressToId[msg.sender];
+        require(patientId > 0, "Not a registered patient");
+        require(_requestIndex < patientAccessRequests[patientId].length, "Request not found");
+        
+        AccessRequest storage request = patientAccessRequests[patientId][_requestIndex];
+        require(request.isPending, "Request already processed");
+        
+        request.isPending = false;
+        request.isApproved = false;
+        
+        ADD_NOTIFICATION(msg.sender, "You denied doctor's access request", "Access Request");
+        ADD_NOTIFICATION(doctorIdToAddress[request.doctorId], "Patient denied your access request", "Access Request");
+        
+        emit AccessDenied(request.id, request.doctorId, patientId);
+    }
+    
+    // Get patient access requests
+    function getPatientAccessRequests(uint256 _patientId)
+        public
+        view
+        returns (AccessRequest[] memory)
+    {
+        return patientAccessRequests[_patientId];
+    }
+    
+    // Check if doctor has access to patient records
+    function hasDoctorAccess(uint256 _patientId, uint256 _doctorId)
+        public
+        view
+        returns (bool)
+    {
+        return doctorRecordAccess[_patientId][_doctorId];
+    }
+    
+    // Patient revokes doctor access
+    function revokeAccess(uint256 _doctorId) public {
+        uint256 patientId = patientAddressToId[msg.sender];
+        require(patientId > 0, "Not a registered patient");
+        
+        doctorRecordAccess[patientId][_doctorId] = false;
+        
+        ADD_NOTIFICATION(msg.sender, "You revoked doctor's access to your records", "Access Request");
+        ADD_NOTIFICATION(doctorIdToAddress[_doctorId], "Patient revoked your access to their records", "Access Request");
+    }
+    
+    // Update encrypted medical record (for doctors with access)
+    function updateEncryptedMedicalRecord(
+        uint256 _patientId,
+        uint256 _recordId,
+        string memory _newIpfsHash,
+        string memory _newEncryptedAESKey
+    ) public onlyDoctor {
+        require(_recordId < patientMedicalRecords[_patientId].length, "Record not found");
+        require(doctorRecordAccess[_patientId][doctorAddressToId[msg.sender]], "No access to patient records");
+        
+        EncryptedMedicalRecord storage record = patientMedicalRecords[_patientId][_recordId];
+        record.ipfsHash = _newIpfsHash;
+        record.encryptedAESKey = _newEncryptedAESKey;
+        record.timestamp = block.timestamp;
+        record.uploadedBy = msg.sender;
+        
+        ADD_NOTIFICATION(patientIdToAddress[_patientId], "Doctor updated your medical record", "Medical Record");
+        ADD_NOTIFICATION(msg.sender, "Medical record updated successfully", "Medical Record");
+        
+        emit RecordUpdated(_patientId, _recordId, msg.sender);
+    }
+    
+    // Deactivate medical record
+    function deactivateMedicalRecord(uint256 _patientId, uint256 _recordId) public {
+        require(_recordId < patientMedicalRecords[_patientId].length, "Record not found");
+        require(
+            patientIdToAddress[_patientId] == msg.sender || msg.sender == admin,
+            "Only patient or admin can deactivate"
+        );
+        
+        patientMedicalRecords[_patientId][_recordId].isActive = false;
+        
+        ADD_NOTIFICATION(patientIdToAddress[_patientId], "Medical record deactivated", "Medical Record");
+    }
+
+    //============ END OF ENCRYPTED MEDICAL RECORDS ============//
 
     //NOTIFICATIOn
     function ADD_NOTIFICATION(address _userAddress, string memory _message, string memory _type) internal {
@@ -249,14 +475,16 @@ contract Healthcare {
         doctorCount++;
         doctors[doctorCount] = Doctor(doctorCount, _IPFS_URL, _address, 0, 0, false);
         registeredDoctors[_address] = true;
+        doctorAddressToId[_address] = doctorCount;
+        doctorIdToAddress[doctorCount] = _address;
 
         payable(admin).transfer(msg.value);
 
         //REGISTER
         CREATE_ACCOUNT(_name, _address, _type);
 
-         ADD_NOTIFICATION(_address, "You have successfully completed the registration, now wating for approval", "Doctor");
-         ADD_NOTIFICATION(admin, "New doctor is registor, now wating for approval", "Doctor");
+         ADD_NOTIFICATION(_address, "You have successfully completed the registration, now waiting for approval", "Doctor");
+         ADD_NOTIFICATION(admin, "New doctor is registered, now waiting for approval", "Doctor");
 
         emit DOCTOR_REGISTERED(doctorCount, _IPFS_URL, _address);
     }
@@ -268,7 +496,7 @@ contract Healthcare {
 
         doctors[_doctorId].isApproved = !doctors[_doctorId].isApproved;
 
-        ADD_NOTIFICATION(msg.sender, "You have approved Docotr registration", "Doctor");
+        ADD_NOTIFICATION(msg.sender, "You have approved Doctor registration", "Doctor");
         ADD_NOTIFICATION(doctors[_doctorId].accountAddress, "Your registration is approved", "Doctor");
 
         emit APPROVE_DOCTOR_STATUSD(_doctorId, doctors[_doctorId].isApproved);
@@ -279,11 +507,11 @@ contract Healthcare {
             require(_patientId <= patientCount, "Patient does not exist");
             patients[_patientId].medicalHistory.push(_newMedicalHistory);
 
-            ADD_NOTIFICATION(msg.sender, "You have successfully update, patient medical history", "Doctor");
+            ADD_NOTIFICATION(msg.sender, "You have successfully updated patient medical history", "Doctor");
 
             ADD_NOTIFICATION(patients[_patientId].accountAddress, "Your medical history updated by doctor", "Doctor");
 
-            ADD_NOTIFICATION(msg.sender, "Patient medicial history is updated", "Doctor");
+            ADD_NOTIFICATION(admin, "Patient medical history is updated", "Doctor");
     }
 
     function COMPLETE_APPOINTMENT(uint _appointmentId) public onlyDoctor {
@@ -326,6 +554,8 @@ contract Healthcare {
             patientCount++;
             patients[patientCount] = Patient(patientCount, _IPFS_URL, _medicalHistory, _accountAddress, _boughtMedicines);
             registeredPatients[_accountAddress] = true;
+            patientAddressToId[_accountAddress] = patientCount;
+            patientIdToAddress[patientCount] = _accountAddress;
 
             payable(admin).transfer(msg.value);
 
@@ -337,7 +567,7 @@ contract Healthcare {
 
             ADD_NOTIFICATION(_accountAddress, "You have successfully completed registration", "Patient");
 
-            ADD_NOTIFICATION(admin, "New Patient is registor successfully", "Patient");
+            ADD_NOTIFICATION(admin, "New Patient is registered successfully", "Patient");
 
             emit PATIENT_ADDED(patientCount, _IPFS_URL, _medicalHistory);
     }
@@ -397,18 +627,16 @@ contract Healthcare {
 
          ADD_NOTIFICATION(msg.sender, "You have successfully bought medicine", "Patient");
 
-        ADD_NOTIFICATION(admin, "Transaction completed, madicine bought successfully", "Patient");
+        ADD_NOTIFICATION(admin, "Transaction completed, medicine bought successfully", "Patient");
 
         emit MEDICINE_BOUGHT(_patientId, _medicineId);
     }
 
     //--------------END OF PATIENT------------------
 
-
-
      //--------------ADMIN------------------
 
-    //UPADTE ONLY ADMIN
+    //UPDATE ONLY ADMIN
     function UPDATE_REGISTRATION_FEE(uint _newFee) public onlyAdmin {
         registrationDoctorFee = _newFee;
 
@@ -436,7 +664,7 @@ contract Healthcare {
     //--------------END OF ADMIN------------------
 
     
-    //--------------GET APTIENT------------------
+    //--------------GET PATIENT------------------
 
     function GET_ALL_PATIENT_ORDERS(uint patientId) public view returns (Order[] memory) {
         require(patientId <= patientCount, "Patient does not exist");
@@ -490,12 +718,9 @@ contract Healthcare {
     }
 
     function GET_PATIENT_ID(address _patientAddress) public view returns (uint) {
-        for (uint i = 1; i <= patientCount; i++) {
-            if (patients[i].accountAddress == _patientAddress) {
-                return i;
-            }
-        }
-        revert("Patient not found");
+        uint id = patientAddressToId[_patientAddress];
+        require(id > 0, "Patient not found");
+        return id;
     }
 
     function GET_PATIENT_APPOINTMENT(uint _appointmentId) public view returns (Appointment memory) {
@@ -550,7 +775,7 @@ contract Healthcare {
         return allAppointments;
     }
 
-    //--------------END OF GET APTIENT------------------
+    //--------------END OF GET PATIENT------------------
 
 
     //-------------- GET OF  DOCTOR------------------
@@ -603,12 +828,9 @@ contract Healthcare {
     }
 
     function GET_DOCTOR_ID(address _doctorAddress) public view returns (uint) {
-        for (uint i = 1; i <= doctorCount; i++) {
-            if (doctors[i].accountAddress == _doctorAddress) {
-                return i;
-            }
-        }
-        revert("Doctor not found");
+        uint id = doctorAddressToId[_doctorAddress];
+        require(id > 0, "Doctor not found");
+        return id;
     }
 
     function GET_DOCTOR_APPOINTMENTS_HISTORYS(uint _doctorId) public view returns (Appointment[] memory) {
@@ -630,6 +852,38 @@ contract Healthcare {
             }
         }
         return doctorAppointments;
+    }
+    
+    // Get doctor's patients
+    function GET_DOCTOR_PATIENTS(uint _doctorId) public view returns (Patient[] memory) {
+        require(_doctorId <= doctorCount, "Doctor does not exist");
+        
+        // Count unique patients
+        uint[] memory uniquePatientIds = new uint[](patientCount);
+        uint uniqueCount = 0;
+        
+        for (uint i = 1; i <= appointmentCount; i++) {
+            if (appointments[i].doctorId == _doctorId) {
+                bool isUnique = true;
+                for (uint j = 0; j < uniqueCount; j++) {
+                    if (uniquePatientIds[j] == appointments[i].patientId) {
+                        isUnique = false;
+                        break;
+                    }
+                }
+                if (isUnique) {
+                    uniquePatientIds[uniqueCount] = appointments[i].patientId;
+                    uniqueCount++;
+                }
+            }
+        }
+        
+        Patient[] memory doctorPatients = new Patient[](uniqueCount);
+        for (uint i = 0; i < uniqueCount; i++) {
+            doctorPatients[i] = patients[uniquePatientIds[i]];
+        }
+        
+        return doctorPatients;
     }
 
     //--------------END OF GET DOCTOR------------------
@@ -737,11 +991,11 @@ contract Healthcare {
         message memory newMsg = message(_myAddress, block.timestamp, _msg);
         allMessages[chatCode].push(newMsg);
 
-        ADD_NOTIFICATION(_myAddress, "You have successfully send message", "Message");
+        ADD_NOTIFICATION(_myAddress, "You have successfully sent message", "Message");
 
         ADD_NOTIFICATION(friend_key, "You have new message", "Message");
 
-        ADD_NOTIFICATION(admin, "message send successfully", "Message");
+        ADD_NOTIFICATION(admin, "Message sent successfully", "Message");
     }
 
     //READ MESSAGE

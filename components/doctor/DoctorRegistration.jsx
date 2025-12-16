@@ -205,8 +205,9 @@ const DoctorRegistration = () => {
         toast.success(
           "Registration submitted successfully! Please wait for admin approval."
         );
-        // Optionally redirect after successful registration
-        // router.push("/doctor/dashboard");
+        // After successful registration, navigate to the doctor dashboard.
+        // Use ?refresh=true so the dashboard knows to re-fetch on-chain data.
+        router.push("/doctor/dashboard?refresh=true");
       }
     } catch (error) {
       console.error("Registration error:", error);

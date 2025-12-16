@@ -276,7 +276,7 @@ const Header = ({ onMenuClick, userType }) => {
   };
 
   return (
-    <header className="relative bg-white/90 backdrop-blur-xl shadow-sm border-b border-slate-200/60 sticky top-0 z-30 transition-all duration-300 overflow-hidden">
+    <header className="relative bg-white/90 backdrop-blur-xl shadow-sm border-b border-slate-200/60 sticky top-0 z-30 transition-all duration-300">
       <div className="pointer-events-none absolute inset-0 opacity-70">
         <div className="absolute -top-16 -right-8 w-52 h-52 bg-gradient-to-br from-emerald-200/60 via-cyan-100/40 to-transparent rounded-full blur-3xl"></div>
         <div className="absolute -bottom-24 -left-10 w-64 h-64 bg-gradient-to-br from-indigo-200/70 via-purple-100/40 to-transparent rounded-full blur-[90px]"></div>
@@ -367,9 +367,12 @@ const Header = ({ onMenuClick, userType }) => {
 
             {/* Enhanced Notifications */}
             {isConnected && (
-              <div className="relative">
+              <div className="relative z-50">
                 <button
-                  onClick={handleToggleNotifications}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleNotifications();
+                  }}
                   className="relative p-2.5 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-110 active:scale-95"
                 >
                   <MdNotifications className="h-6 w-6" />
@@ -387,7 +390,15 @@ const Header = ({ onMenuClick, userType }) => {
 
                 {/* Modern Notifications dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-3 w-96 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/50 z-50 animate-fade-in">
+                  <div 
+                    className="absolute right-0 mt-3 w-96 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/50 z-[100]"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ 
+                      animation: 'fadeIn 0.2s ease-in-out',
+                      transform: 'translateY(0)',
+                      opacity: 1
+                    }}
+                  >
                     <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 rounded-t-2xl">
                       <div className="flex items-center justify-between">
                         <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -455,9 +466,12 @@ const Header = ({ onMenuClick, userType }) => {
 
             {/* Enhanced Profile dropdown */}
             {isConnected && (
-              <div className="relative">
+              <div className="relative z-50">
                 <button
-                  onClick={() => setShowProfile(!showProfile)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowProfile(!showProfile);
+                  }}
                   className="relative p-2.5 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-110 active:scale-95"
                 >
                   <div className="relative">
@@ -468,7 +482,15 @@ const Header = ({ onMenuClick, userType }) => {
 
                 {/* Modern Profile dropdown */}
                 {showProfile && (
-                  <div className="absolute right-0 mt-3 w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/50 z-50 animate-fade-in">
+                  <div 
+                    className="absolute right-0 mt-3 w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200/50 z-[100]"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ 
+                      animation: 'fadeIn 0.2s ease-in-out',
+                      transform: 'translateY(0)',
+                      opacity: 1
+                    }}
+                  >
                     <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 rounded-t-2xl">
                       <div className="flex items-center space-x-3">
                         <div className="p-3 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl">
@@ -535,7 +557,7 @@ const Header = ({ onMenuClick, userType }) => {
       {/* Close dropdowns when clicking outside */}
       {(showNotifications || showProfile) && (
         <div
-          className="fixed inset-0 z-40 bg-black bg-opacity-20 backdrop-blur-sm"
+          className="fixed inset-0 z-[90] bg-black bg-opacity-20 backdrop-blur-sm"
           onClick={() => {
             setShowNotifications(false);
             setShowProfile(false);

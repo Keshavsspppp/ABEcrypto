@@ -68,6 +68,7 @@ export const Button = ({
 
   return (
     <button
+      type={props.type || "button"}
       className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
       disabled={disabled || loading}
       {...props}

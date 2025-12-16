@@ -67,6 +67,7 @@ import ipfsService from "../../utils/ipfs";
 import { truncateAddress, safeNumberConversion } from "../../utils/helpers";
 import { formatEther } from "viem";
 import toast from "react-hot-toast";
+import { useEncryption } from "../../hooks/useEncryption";
 
 const PatientSelectionCard = ({ patient, onSelect, isSelected }) => {
   const [patientData, setPatientData] = useState(null);
@@ -489,7 +490,9 @@ const DoctorPrescribeMedicine = () => {
     getDoctorDetails,
     prescribeMedicine,
     getUserType,
+    updatePatientMedicalHistoryEncrypted,
   } = useHealthcareContract();
+  const { encryptMedicalRecord } = useEncryption();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -696,32 +699,81 @@ const DoctorPrescribeMedicine = () => {
 
   const handlePrescribeMedicines = async () => {
     if (!selectedPatient || selectedMedicines.size === 0) {
-      toast.error("Please select patient and medicines");
+      toast.error("Please select a patient and at least one medicine");
+      return;
+    }
+
+    if (!prescriptionForm.instructions || !prescriptionForm.duration) {
+      toast.error("Please fill in all prescription details");
       return;
     }
 
     try {
       setPrescribingLoading(true);
-      console.log("Starting prescription process...");
 
-      const patientId = safeNumberConversion(selectedPatient.id);
+      const prescriptionData = {
+        medicines: Array.from(selectedMedicines.entries()).map(([id, qty]) => ({
+          medicineId: id,
+          quantity: qty,
+        })),
+        instructions: prescriptionForm.instructions,
+        duration: prescriptionForm.duration,
+        frequency: prescriptionForm.frequency,
+        notes: prescriptionForm.notes,
+        prescribedBy: doctorIdValue,
+        prescribedAt: new Date().toISOString(),
+      };
 
-      // Prescribe each selected medicine
-      for (const [medicineId, { medicine, quantity }] of selectedMedicines) {
-        console.log("Prescribing medicine:", {
-          medicineId,
-          patientId,
-          quantity,
-        });
-        await prescribeMedicine(medicineId, patientId);
+      // Encrypt prescription data
+      toast.loading("Encrypting prescription data...");
+
+      const encryptedPrescription = await encryptMedicalRecord(
+        prescriptionData,
+        selectedPatient.id,
+        {
+          doctorId: doctorIdValue,
+          specialty: doctorSpecialtyValue,
+          allowAdmin: true,
+          emergencyAccess: false,
+        }
+      );
+
+      toast.dismiss();
+
+      // Prescribe medicines on blockchain
+      for (const [medicineId, quantity] of selectedMedicines.entries()) {
+        toast.loading(`Prescribing medicine ${medicineId}...`);
+        await prescribeMedicine(medicineId, selectedPatient.id);
+        toast.dismiss();
       }
 
-      console.log("All medicines prescribed successfully");
+      // Update patient medical history with encrypted prescription
+      toast.loading("Adding prescription to medical history...");
+      await updatePatientMedicalHistoryEncrypted(
+        selectedPatient.id,
+        `Prescription: ${Array.from(selectedMedicines.keys()).join(", ")}. ${prescriptionForm.instructions}`,
+        {
+          doctorId: doctorIdValue,
+          specialty: doctorSpecialtyValue,
+          allowAdmin: true,
+        }
+      );
+
+      toast.dismiss();
       toast.success("Medicines prescribed successfully!");
-      router.push("/doctor/dashboard");
+
+      // Reset form
+      setSelectedMedicines(new Map());
+      setPrescriptionForm({
+        instructions: "",
+        duration: "",
+        frequency: "",
+        notes: "",
+      });
+      setStep(1);
     } catch (error) {
       console.error("Error prescribing medicines:", error);
-      toast.error("Failed to prescribe medicines. Please try again.");
+      toast.error("Failed to prescribe medicines");
     } finally {
       setPrescribingLoading(false);
     }

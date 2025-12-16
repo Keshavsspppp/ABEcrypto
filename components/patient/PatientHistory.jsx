@@ -1,77 +1,125 @@
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/router";
-import {
-  FiCalendar,
+import { 
+  FiFileText, 
+  FiCalendar, 
+  FiUpload, 
+  FiShield, 
+  FiEye, 
+  FiCheck, 
   FiClock,
-  FiUser,
-  FiFileText,
-  FiActivity,
-  FiHeart,
-  FiTrendingUp,
-  FiDownload,
   FiFilter,
   FiSearch,
-  FiEye,
-  FiMapPin,
-  FiPhone,
-  FiMail,
-  FiAward,
-  FiCheck,
-  FiX,
-  FiAlertCircle,
-  FiClipboard,
   FiRefreshCw,
-  FiArrowLeft,
-  FiShield,
-  FiInfo,
-  FiShare2,
-  FiCopy,
+  FiClipboard
 } from "react-icons/fi";
-import {
-  MdVerifiedUser,
-  MdLocalHospital,
-  MdHistory,
-  MdHealthAndSafety,
-  MdMedicalServices,
-  MdSchedule,
-  MdEmergency,
-  MdBiotech,
-  MdSecurity,
-  MdAccountBalance,
-  MdFavorite,
-} from "react-icons/md";
-import {
-  FaUserMd,
-  FaStethoscope,
-  FaHospitalUser,
+import { 
+  FaNotesMedical, 
+  FaStethoscope, 
   FaPrescriptionBottleAlt,
-  FaHeartbeat,
-  FaNotesMedical,
-  FaAmbulance,
+  FaUserMd,
+  FaCalendarAlt,
   FaSyringe,
-  FaUserNurse,
-  FaMicroscope,
-  FaXRay,
-  FaThermometerHalf,
-  FaBrain,
-  FaEye,
-  FaTooth,
-  FaBone,
-  FaLungs,
+  FaPrescriptionBottle
 } from "react-icons/fa";
-import { Card, Button, Input, Select, Badge, Modal } from "../common";
+import { 
+  MdHistory, 
+  MdHealthAndSafety, 
+  MdLocalHospital,
+  MdSchedule,
+  MdSecurity,
+  MdMedicalServices,
+  MdVerifiedUser
+} from "react-icons/md";
+import { Button, Card, Badge, Modal, Input, Select } from "../common";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useHealthcareContract } from "../../hooks/useContract";
-import ipfsService from "../../utils/ipfs";
+import MedicalRecordUpload from "./MedicalRecordUpload";
+import AccessRequestManagement from "./AccessRequestManagement";
+import ABEPolicyBadge from "../common/ABEPolicyBadge";
 import abeEncryption from "../../utils/encryption";
-import {
-  truncateAddress,
-  formatDate,
-  safeNumberConversion,
-} from "../../utils/helpers";
-import { formatEther } from "viem";
+import ipfsService from "../../utils/ipfs";
 import toast from "react-hot-toast";
+
+// Helper function
+const safeNumberConversion = (value) => {
+  if (typeof value === 'bigint') {
+    return Number(value);
+  }
+  if (typeof value === 'object' && value !== null && typeof value.toString === 'function') {
+    return Number(value.toString());
+  }
+  return Number(value);
+};
+
+const formatDate = (timestamp) => {
+  if (!timestamp) return "N/A";
+  const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+};
+
+const truncateAddress = (address) => {
+  if (!address) return "";
+  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+};
+
+// Decrypt medical history entries
+const decryptMedicalHistoryEntries = async (encryptedHistory, userAttributes) => {
+  if (!encryptedHistory || encryptedHistory.length === 0) {
+    return [];
+  }
+
+  const decrypted = [];
+  for (let i = 0; i < encryptedHistory.length; i++) {
+    try {
+      const entry = encryptedHistory[i];
+      
+      if (typeof entry === 'string' && !entry.includes('encryptedData')) {
+        decrypted.push(entry);
+        continue;
+      }
+
+      let encryptedPackage = entry;
+      if (typeof entry === 'string') {
+        try {
+          encryptedPackage = JSON.parse(entry);
+        } catch (e) {
+          decrypted.push(entry);
+          continue;
+        }
+      }
+
+      if (encryptedPackage && encryptedPackage.encryptedData && encryptedPackage.encryptedKey) {
+        try {
+          const decryptedData = await abeEncryption.decrypt(encryptedPackage, userAttributes);
+          
+          if (typeof decryptedData === 'object' && decryptedData.entry) {
+            decrypted.push(decryptedData.entry);
+          } else if (typeof decryptedData === 'string') {
+            decrypted.push(decryptedData);
+          } else {
+            decrypted.push(JSON.stringify(decryptedData));
+          }
+        } catch (decryptError) {
+          console.warn(`Unable to decrypt medical history entry ${i}:`, decryptError);
+          decrypted.push(`[Encrypted Record #${i + 1} - Access Denied]`);
+        }
+      } else {
+        decrypted.push(typeof encryptedPackage === 'string' ? encryptedPackage : JSON.stringify(encryptedPackage));
+      }
+    } catch (error) {
+      console.error(`Error processing medical history entry ${i}:`, error);
+      decrypted.push(`[Error loading record #${i + 1}]`);
+    }
+  }
+
+  return decrypted;
+};
 
 const AppointmentCard = ({ appointment, doctors, onViewDetails }) => {
   const [doctorData, setDoctorData] = useState(null);
@@ -287,7 +335,8 @@ const MedicalHistoryCard = ({ record, index, onShareAccess }) => {
             </div>
           </div>
         </div>
-        <div className="flex justify-end mt-4">
+        {/* REMOVED: Manage Access Button */}
+        {/* <div className="flex justify-end mt-4">
           <Button
             variant="outline"
             size="small"
@@ -297,7 +346,7 @@ const MedicalHistoryCard = ({ record, index, onShareAccess }) => {
             <FiShare2 className="h-4 w-4 mr-2" />
             Manage Access
           </Button>
-        </div>
+        </div> */}
       </div>
     </div>
   );
@@ -416,7 +465,10 @@ const PrescriptionHistoryCard = ({ prescription, medicines, doctors }) => {
 };
 
 const PatientHistory = () => {
+  // Tab state
   const [activeTab, setActiveTab] = useState("appointments");
+  
+  // Data state
   const [appointments, setAppointments] = useState([]);
   const [medicalHistory, setMedicalHistory] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
@@ -425,18 +477,11 @@ const PatientHistory = () => {
   const [loading, setLoading] = useState(true);
   const [patientData, setPatientData] = useState(null);
   const [patientIdValue, setPatientIdValue] = useState(null);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [shareRecord, setShareRecord] = useState(null);
-  const [shareRecordIndex, setShareRecordIndex] = useState(null);
-  const [shareDoctorId, setShareDoctorId] = useState("");
-  const [shareSpecialty, setShareSpecialty] = useState("");
-  const [shareAccessLevel, setShareAccessLevel] = useState("read");
-  const [shareAllowAdmin, setShareAllowAdmin] = useState(true);
-  const [shareLoading, setShareLoading] = useState(false);
-  const [shareLink, setShareLink] = useState("");
-  const [shareError, setShareError] = useState("");
-  const [shareCopied, setShareCopied] = useState(false);
 
+  // Medical records state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showAccessRequestsModal, setShowAccessRequestsModal] = useState(false);
+  
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -502,7 +547,7 @@ const PatientHistory = () => {
           return;
         }
 
-        // Process data with safe number conversion
+        // Process data
         const processedAppointments = (patientAppointments || []).map(
           (appointment) => ({
             ...appointment,
@@ -534,18 +579,21 @@ const PatientHistory = () => {
           id: safeNumberConversion(medicine.id),
         }));
 
-        console.log("Patient history data loaded:", {
-          patientDetails,
-          appointmentsCount: processedAppointments.length,
-          medicalHistoryCount: (patientMedicalHistory || []).length,
-          prescriptionsCount: processedPrescriptions.length,
-          doctorsCount: processedDoctors.length,
-          medicinesCount: processedMedicines.length,
-        });
+        // Decrypt medical history
+        const patientAttributes = abeEncryption.getUserAttributes(
+          address,
+          "patient",
+          patientIdNumber,
+          null
+        );
+        const processedMedicalHistory = await decryptMedicalHistoryEntries(
+          patientMedicalHistory,
+          patientAttributes
+        );
 
         setPatientData(patientDetails);
         setAppointments(processedAppointments);
-        setMedicalHistory(patientMedicalHistory || []);
+        setMedicalHistory(processedMedicalHistory || []);
         setPrescriptions(processedPrescriptions);
         setDoctors(processedDoctors);
         setMedicines(processedMedicines);
@@ -560,772 +608,370 @@ const PatientHistory = () => {
     fetchData();
   }, [isConnected, address, router]);
 
-  const handleViewAppointmentDetails = (appointment) => {
-    // You can implement a modal or navigate to appointment details
-    console.log("View appointment details:", appointment);
-  };
-
-  const handleExportHistory = () => {
-    // Implement export functionality
-    toast.info("Export functionality coming soon!");
-  };
-
-  const handleOpenShareAccess = (record, index) => {
-    setShareRecord(record);
-    setShareRecordIndex(index);
-    setShareDoctorId("");
-    setShareSpecialty("");
-    setShareAccessLevel("read");
-    setShareAllowAdmin(true);
-    setShareLink("");
-    setShareError("");
-    setShareCopied(false);
-    setShareModalOpen(true);
-  };
-
-  const closeShareModal = () => {
-    setShareModalOpen(false);
-    setShareRecord(null);
-    setShareRecordIndex(null);
-  };
-
-  const handleShareAccess = async () => {
-    if (!shareRecord) {
-      toast.error("No medical record selected");
-      return;
-    }
-    if (!shareDoctorId) {
-      toast.error("Please select a doctor to share with");
-      return;
-    }
-    if (!patientIdValue) {
-      toast.error("Patient identifier missing");
-      return;
-    }
-
-    try {
-      setShareLoading(true);
-      setShareError("");
-      setShareLink("");
-
-      const doctorIdNumber = Number(shareDoctorId);
-
-      const patientCondition = {
-        type: "AND",
-        conditions: [
-          { attribute: "role", operator: "===", value: "patient" },
-          {
-            attribute: "patientId",
-            operator: "===",
-            value: patientIdValue,
-          },
-        ],
-      };
-
-      const doctorCondition = {
-        type: "AND",
-        conditions: [
-          { attribute: "role", operator: "===", value: "doctor" },
-          { attribute: "doctorId", operator: "===", value: doctorIdNumber },
-        ],
-      };
-
-      if (shareSpecialty.trim()) {
-        doctorCondition.conditions.push({
-          attribute: "specialty",
-          operator: "===",
-          value: shareSpecialty.trim().toLowerCase(),
-        });
-      }
-
-      if (shareAccessLevel) {
-        doctorCondition.conditions.push({
-          attribute: "accessLevel",
-          operator: "===",
-          value: shareAccessLevel,
-        });
-      }
-
-      const orConditions = [patientCondition, doctorCondition];
-
-      if (shareAllowAdmin) {
-        orConditions.push({
-          attribute: "role",
-          operator: "===",
-          value: "admin",
-        });
-      }
-
-      const accessPolicy = {
-        type: "OR",
-        conditions: orConditions,
-      };
-
-      const encryptedPackage = await abeEncryption.encrypt(
-        {
-          entry: shareRecord,
-          recordIndex: shareRecordIndex,
-          patientId: patientIdValue,
-          sharedBy: address?.toLowerCase(),
-          sharedAt: new Date().toISOString(),
-          allowedDoctorId: doctorIdNumber,
-          specialtyRequirement: shareSpecialty.trim() || null,
-          accessLevelRequirement: shareAccessLevel,
-        },
-        accessPolicy
-      );
-
-      const metadataName = `shared-record-${
-        patientIdValue || "patient"
-      }-${(shareRecordIndex ?? 0) + 1}`;
-
-      const uploadResult = await ipfsService.uploadJSONToIPFS(
-        encryptedPackage,
-        {
-          name: metadataName,
-          type: "patient-shared-record",
-          keyvalues: {
-            patientId: String(patientIdValue || ""),
-            doctorId: String(doctorIdNumber),
-          },
-        }
-      );
-
-      setShareLink(uploadResult.url);
-      toast.success("Encrypted share link created");
-    } catch (error) {
-      console.error("Error sharing record:", error);
-      setShareError(error.message || "Failed to share record");
-      toast.error("Failed to share record");
-    } finally {
-      setShareLoading(false);
-    }
-  };
-
-  const handleCopyShareLink = async () => {
-    if (!shareLink) return;
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(shareLink);
-        setShareCopied(true);
-        toast.success("Share link copied");
-        setTimeout(() => setShareCopied(false), 1500);
-      }
-    } catch (error) {
-      console.error("Clipboard error:", error);
-      toast.error("Unable to copy link");
-    }
-  };
-
-  // Filter appointments based on search and filters
-  const filteredAppointments = appointments.filter((appointment) => {
-    const doctor = doctors.find((d) => d.id === appointment.doctorId);
-
-    const matchesSearch =
-      !searchTerm ||
-      appointment.id.toString().includes(searchTerm.toLowerCase()) ||
-      doctor?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      appointment.condition?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStatus =
-      !statusFilter ||
-      (statusFilter === "completed" && appointment.isOpen === false) ||
-      (statusFilter === "scheduled" && appointment.isOpen === true) ||
-      (statusFilter === "pending" && appointment.isOpen === undefined);
-
+  const filteredAppointments = appointments.filter((apt) => {
+    const matchesSearch = searchTerm === "" || 
+      apt.condition?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      apt.message?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = statusFilter === "" ||
+      (statusFilter === "completed" && apt.isOpen === false) ||
+      (statusFilter === "scheduled" && apt.isOpen === true) ||
+      (statusFilter === "pending" && apt.isOpen === undefined);
+    
     return matchesSearch && matchesStatus;
   });
 
-  const tabs = [
-    {
-      id: "appointments",
-      label: "Appointments",
-      icon: MdSchedule,
-      count: filteredAppointments.length,
-      description: "Your consultation history",
-    },
-    {
-      id: "medical",
-      label: "Medical Records",
-      icon: FaNotesMedical,
-      count: medicalHistory.length,
-      description: "Medical history and notes",
-    },
-    {
-      id: "prescriptions",
-      label: "Prescriptions",
-      icon: FaPrescriptionBottleAlt,
-      count: prescriptions.length,
-      description: "Prescribed medications",
-    },
-  ];
-
-  // Calculate statistics
-  const stats = {
-    totalAppointments: appointments.length,
-    completedAppointments: appointments.filter((a) => a.isOpen === false)
-      .length,
-    totalPrescriptions: prescriptions.length,
-    medicalRecords: medicalHistory.length,
+  const handleViewAppointmentDetails = (appointment) => {
+    toast.success("Viewing appointment details");
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-blue-50">
-        <div className="text-center">
-          <div className="relative mb-6">
-            <div className="p-6 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full shadow-2xl">
-              <MdHistory className="h-12 w-12 text-white animate-pulse" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-teal-300 rounded-full animate-ping"></div>
-          </div>
-          <LoadingSpinner size="large" />
-          <p className="mt-4 text-gray-600 font-medium">
-            Loading medical history...
-          </p>
-          <p className="text-sm text-gray-500">Accessing healthcare records</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!patientData) {
-    return (
-      <div className="max-w-md mx-auto mt-10">
-        <Card className="bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-200">
-          <div className="text-center py-12">
-            <div className="relative mb-6">
-              <div className="p-6 bg-gradient-to-r from-red-500 to-pink-500 rounded-full w-fit mx-auto shadow-lg">
-                <FaHospitalUser className="h-12 w-12 text-white" />
-              </div>
-              <div className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-                <MdEmergency className="h-4 w-4 text-white" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center justify-center gap-2">
-              <MdHealthAndSafety className="h-5 w-5 text-red-600" />
-              Patient Registration Required
-            </h3>
-            <p className="text-gray-600 leading-relaxed mb-6">
-              You need to register as a patient on our secure healthcare
-              platform to access your medical history and records.
-            </p>
-            <div className="space-y-3">
-              <Button
-                onClick={() => router.push("/patient/register")}
-                className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 w-full"
-              >
-                <FaHospitalUser className="mr-2 h-4 w-4" />
-                Register as Patient
-              </Button>
-              <div className="flex items-center justify-center space-x-2 text-sm text-red-600">
-                <FiShield className="h-4 w-4" />
-                <span>HIPAA Compliant & Blockchain Secured</span>
-              </div>
-            </div>
-          </div>
-        </Card>
+      <div className="flex justify-center items-center min-h-screen">
+        <LoadingSpinner size="large" />
       </div>
     );
   }
 
   return (
     <>
-      <div className="max-w-6xl mx-auto py-8 px-4 relative">
-      {/* Medical Background Elements */}
-      <div className="absolute inset-0 opacity-5 overflow-hidden">
+      {/* Background Elements */}
+      <div className="absolute inset-0 opacity-5 overflow-hidden pointer-events-none">
         <MdHistory className="absolute top-20 right-20 h-32 w-32 text-teal-600 animate-pulse" />
         <FaStethoscope className="absolute bottom-20 left-20 h-24 w-24 text-cyan-600" />
-        <MdLocalHospital className="absolute top-1/2 left-1/4 h-28 w-28 text-blue-600 animate-pulse animation-delay-2000" />
+        <MdLocalHospital className="absolute top-1/2 left-1/4 h-28 w-28 text-blue-600 animate-pulse" />
       </div>
 
-      {/* Enhanced Header */}
-      <div className="mb-12 relative z-10">
-        <div className="flex items-center space-x-6 mb-6">
-          <Button
-            variant="outline"
-            onClick={() => router.push("/patient/dashboard")}
-            className="border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+      <div className="relative z-10">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            Medical History
+          </h1>
+          <p className="text-gray-600 text-lg">
+            View your complete medical journey
+          </p>
+        </div>
+
+        {/* Updated Tabs */}
+        <div className="flex flex-wrap gap-3 mb-8">
+          <button
+            onClick={() => setActiveTab("appointments")}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all ${
+              activeTab === "appointments"
+                ? "bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg"
+                : "bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200"
+            }`}
           >
-            <FiArrowLeft className="h-4 w-4 mr-2" />
-            Dashboard
-          </Button>
-          <div className="flex items-center space-x-4">
-            <div className="p-4 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl shadow-lg">
-              <MdHistory className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 flex items-center gap-2">
-                Medical History
-                <MdHealthAndSafety className="h-8 w-8 text-teal-600" />
-              </h1>
-              <p className="text-xl text-gray-600">
-                Your complete healthcare records and consultation history
-              </p>
-            </div>
-          </div>
+            <FaCalendarAlt className="inline mr-2" />
+            Appointments
+          </button>
+          <button
+            onClick={() => setActiveTab("medical")}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all ${
+              activeTab === "medical"
+                ? "bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg"
+                : "bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200"
+            }`}
+          >
+            <FaNotesMedical className="inline mr-2" />
+            Medical Records
+          </button>
+          <button
+            onClick={() => setActiveTab("upload")}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all ${
+              activeTab === "upload"
+                ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg"
+                : "bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200"
+            }`}
+          >
+            <FiUpload className="inline mr-2" />
+            Upload Record
+          </button>
+          <button
+            onClick={() => setActiveTab("access")}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all ${
+              activeTab === "access"
+                ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg"
+                : "bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200"
+            }`}
+          >
+            <FiShield className="inline mr-2" />
+            Access Requests
+          </button>
+          <button
+            onClick={() => router.push('/patient/prescriptions')}
+            className="px-6 py-3 rounded-xl font-semibold transition-all bg-white text-gray-600 hover:bg-gray-50 border-2 border-gray-200"
+          >
+            <FaPrescriptionBottle className="inline mr-2" />
+            View Prescriptions →
+          </button>
         </div>
 
-        <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
-          <div></div>
-          <div className="flex items-center space-x-3">
-            <Button
-              variant="outline"
-              onClick={handleExportHistory}
-              className="border-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-            >
-              <FiDownload className="h-4 w-4 mr-2" />
-              Export Records
-            </Button>
-          </div>
-        </div>
-
-        {/* Enhanced Statistics Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-xl flex items-center justify-center mx-auto mb-4 border-2 border-blue-200 shadow-lg">
-                <MdSchedule className="h-8 w-8 text-blue-600" />
-              </div>
-              <p className="text-3xl font-bold text-blue-600 mb-2">
-                {stats.totalAppointments}
-              </p>
-              <p className="text-sm text-gray-600 font-medium">
-                Total Appointments
+        {/* Appointments Tab */}
+        {activeTab === "appointments" && (
+          <div className="space-y-8">
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
+                Appointment History
+                <MdSchedule className="h-8 w-8 text-teal-600" />
+              </h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+                Track your medical consultations and healthcare provider visits
               </p>
             </div>
-          </Card>
 
-          <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-200">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-emerald-100 to-green-100 rounded-xl flex items-center justify-center mx-auto mb-4 border-2 border-emerald-200 shadow-lg">
-                <FiCheck className="h-8 w-8 text-emerald-600" />
-              </div>
-              <p className="text-3xl font-bold text-emerald-600 mb-2">
-                {stats.completedAppointments}
-              </p>
-              <p className="text-sm text-gray-600 font-medium">Completed</p>
-            </div>
-          </Card>
+            {/* Enhanced Filters */}
+            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                  <FiFilter className="h-6 w-6 text-blue-600" />
+                  Filter Appointments
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3 flex items-center gap-1">
+                      <FiSearch className="h-4 w-4 text-blue-600" />
+                      Search Appointments
+                    </label>
+                    <div className="relative">
+                      <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <Input
+                        type="text"
+                        placeholder="Search appointments..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-12 focus:ring-blue-500 focus:border-blue-500 border-2 border-blue-200"
+                      />
+                    </div>
+                  </div>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-purple-100 to-pink-100 rounded-xl flex items-center justify-center mx-auto mb-4 border-2 border-purple-200 shadow-lg">
-                <FaPrescriptionBottleAlt className="h-8 w-8 text-purple-600" />
-              </div>
-              <p className="text-3xl font-bold text-purple-600 mb-2">
-                {stats.totalPrescriptions}
-              </p>
-              <p className="text-sm text-gray-600 font-medium">Prescriptions</p>
-            </div>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-orange-50 to-red-50 border-2 border-orange-200">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-orange-100 to-red-100 rounded-xl flex items-center justify-center mx-auto mb-4 border-2 border-orange-200 shadow-lg">
-                <FaNotesMedical className="h-8 w-8 text-orange-600" />
-              </div>
-              <p className="text-3xl font-bold text-orange-600 mb-2">
-                {stats.medicalRecords}
-              </p>
-              <p className="text-sm text-gray-600 font-medium">
-                Medical Records
-              </p>
-            </div>
-          </Card>
-        </div>
-
-        {/* Enhanced Tabs */}
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 rounded-2xl p-2 border-2 border-gray-200">
-          <nav className="flex space-x-2 overflow-x-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 min-w-0 py-4 px-6 font-bold text-sm flex items-center justify-center space-x-3 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? "bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg transform scale-105"
-                      : "text-gray-600 hover:text-gray-800 hover:bg-white hover:shadow-md"
-                  }`}
-                >
-                  <Icon className="h-5 w-5 flex-shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                  {tab.count > 0 && (
-                    <Badge
-                      className={
-                        activeTab === tab.id
-                          ? "bg-white text-teal-600 border-none text-xs flex-shrink-0"
-                          : "bg-gradient-to-r from-teal-500 to-cyan-500 text-white border-none text-xs flex-shrink-0"
-                      }
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-3 flex items-center gap-1">
+                      <MdVerifiedUser className="h-4 w-4 text-blue-600" />
+                      Status Filter
+                    </label>
+                    <Select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="focus:ring-blue-500 focus:border-blue-500 border-2 border-blue-200"
                     >
-                      {tab.count}
-                    </Badge>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
+                      <option value="">All Statuses</option>
+                      <option value="completed">Completed</option>
+                      <option value="scheduled">Scheduled</option>
+                      <option value="pending">Pending</option>
+                    </Select>
+                  </div>
 
-      {/* Appointments Tab */}
-      {activeTab === "appointments" && (
-        <div className="space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
-              Appointment History
-              <MdSchedule className="h-8 w-8 text-teal-600" />
-            </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-              Track your medical consultations and healthcare provider visits
-            </p>
-          </div>
-
-          {/* Enhanced Filters */}
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
-            <div className="p-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <FiFilter className="h-6 w-6 text-blue-600" />
-                Filter Appointments
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-3 flex items-center gap-1">
-                    <FiSearch className="h-4 w-4 text-blue-600" />
-                    Search Appointments
-                  </label>
-                  <div className="relative">
-                    <FiSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <Input
-                      type="text"
-                      placeholder="Search appointments..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-12 focus:ring-blue-500 focus:border-blue-500 border-2 border-blue-200"
-                    />
+                  <div className="flex items-end">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setStatusFilter("");
+                        setDateFilter("");
+                      }}
+                      className="w-full border-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                    >
+                      <FiRefreshCw className="h-4 w-4 mr-2" />
+                      Reset Filters
+                    </Button>
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-3 flex items-center gap-1">
-                    <MdVerifiedUser className="h-4 w-4 text-blue-600" />
-                    Status Filter
-                  </label>
-                  <Select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="focus:ring-blue-500 focus:border-blue-500 border-2 border-blue-200"
-                  >
-                    <option value="">All Statuses</option>
-                    <option value="completed">Completed</option>
-                    <option value="scheduled">Scheduled</option>
-                    <option value="pending">Pending</option>
-                  </Select>
-                </div>
-
-                <div className="flex items-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSearchTerm("");
-                      setStatusFilter("");
-                      setDateFilter("");
-                    }}
-                    className="w-full border-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-                  >
-                    <FiRefreshCw className="h-4 w-4 mr-2" />
-                    Reset Filters
-                  </Button>
-                </div>
               </div>
-            </div>
-          </Card>
-
-          {/* Results Summary */}
-          <div className="flex items-center justify-between bg-white rounded-xl p-4 border-2 border-gray-200">
-            <p className="text-gray-600 font-medium flex items-center gap-2">
-              <MdSchedule className="h-5 w-5 text-teal-600" />
-              Showing{" "}
-              <span className="font-bold text-teal-600">
-                {filteredAppointments.length}
-              </span>{" "}
-              of <span className="font-bold">{appointments.length}</span>{" "}
-              appointments
-            </p>
-          </div>
-
-          {/* Appointments List */}
-          {filteredAppointments.length > 0 ? (
-            <div className="space-y-6">
-              {filteredAppointments.map((appointment) => (
-                <AppointmentCard
-                  key={appointment.id}
-                  appointment={appointment}
-                  doctors={doctors}
-                  onViewDetails={handleViewAppointmentDetails}
-                />
-              ))}
-            </div>
-          ) : (
-            <Card className="text-center py-16 bg-gradient-to-br from-gray-50 to-slate-50 border-2 border-gray-200">
-              <div className="p-6 bg-gradient-to-r from-gray-100 to-slate-100 rounded-full w-fit mx-auto mb-6">
-                <MdSchedule className="h-16 w-16 text-gray-400" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                No appointments found
-              </h3>
-              <p className="text-gray-600 max-w-md mx-auto leading-relaxed mb-6">
-                {searchTerm || statusFilter
-                  ? "Try adjusting your filters to see more results."
-                  : "You haven't had any medical consultations yet."}
-              </p>
-              {!searchTerm && !statusFilter && (
-                <Button
-                  onClick={() => router.push("/patient/book-appointment")}
-                  className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600"
-                >
-                  <MdSchedule className="mr-2 h-4 w-4" />
-                  Book Your First Appointment
-                </Button>
-              )}
             </Card>
-          )}
-        </div>
-      )}
 
-      {/* Medical Records Tab */}
-      {activeTab === "medical" && (
-        <div className="space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
-              Medical Records
-              <FaNotesMedical className="h-8 w-8 text-emerald-600" />
-            </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-              Your medical history and health records maintained by healthcare
-              providers
-            </p>
-          </div>
-
-          {medicalHistory.length > 0 ? (
-            <div className="space-y-6">
-              {medicalHistory.map((record, index) => (
-                <MedicalHistoryCard
-                  key={index}
-                  record={record}
-                  index={index}
-                  onShareAccess={handleOpenShareAccess}
-                />
-              ))}
-            </div>
-          ) : (
-            <Card className="text-center py-16 bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-200">
-              <div className="p-6 bg-gradient-to-r from-emerald-100 to-green-100 rounded-full w-fit mx-auto mb-6">
-                <FaNotesMedical className="h-16 w-16 text-emerald-400" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                No medical records yet
-              </h3>
-              <p className="text-gray-600 max-w-md mx-auto leading-relaxed mb-6">
-                Your medical history will be updated by doctors during
-                consultations and stored securely on the blockchain.
+            {/* Results Summary */}
+            <div className="flex items-center justify-between bg-white rounded-xl p-4 border-2 border-gray-200">
+              <p className="text-gray-600 font-medium flex items-center gap-2">
+                <MdSchedule className="h-5 w-5 text-teal-600" />
+                Showing{" "}
+                <span className="font-bold text-teal-600">
+                  {filteredAppointments.length}
+                </span>{" "}
+                of <span className="font-bold">{appointments.length}</span>{" "}
+                appointments
               </p>
+            </div>
+
+            {/* Appointments List */}
+            {filteredAppointments.length > 0 ? (
+              <div className="space-y-6">
+                {filteredAppointments.map((appointment) => (
+                  <AppointmentCard
+                    key={appointment.id}
+                    appointment={appointment}
+                    doctors={doctors}
+                    onViewDetails={handleViewAppointmentDetails}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card className="text-center py-16 bg-gradient-to-br from-gray-50 to-slate-50 border-2 border-gray-200">
+                <div className="p-6 bg-gradient-to-r from-gray-100 to-slate-100 rounded-full w-fit mx-auto mb-6">
+                  <MdSchedule className="h-16 w-16 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-3">
+                  No appointments found
+                </h3>
+                <p className="text-gray-600 max-w-md mx-auto leading-relaxed mb-6">
+                  {searchTerm || statusFilter
+                    ? "Try adjusting your filters to see more results."
+                    : "You haven't had any medical consultations yet."}
+                </p>
+                {!searchTerm && !statusFilter && (
+                  <Button
+                    onClick={() => router.push("/patient/book-appointment")}
+                    className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600"
+                  >
+                    <MdSchedule className="mr-2 h-4 w-4" />
+                    Book Your First Appointment
+                  </Button>
+                )}
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* Medical Records Tab */}
+        {activeTab === "medical" && (
+          <div className="space-y-8">
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
+                Medical Records
+                <FaNotesMedical className="h-8 w-8 text-emerald-600" />
+              </h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+                Your encrypted medical records with CP-ABE access control
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-center gap-4">
               <Button
-                onClick={() => router.push("/patient/book-appointment")}
+                onClick={() => setShowUploadModal(true)}
                 className="bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600"
               >
-                <FaStethoscope className="mr-2 h-4 w-4" />
-                Book Medical Consultation
+                <FiUpload className="h-4 w-4 mr-2" />
+                Upload Medical Record
               </Button>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {/* Prescriptions Tab */}
-      {activeTab === "prescriptions" && (
-        <div className="space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
-              Prescription History
-              <FaPrescriptionBottleAlt className="h-8 w-8 text-blue-600" />
-            </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-              Medications prescribed by your doctors during consultations
-            </p>
-          </div>
-
-          {prescriptions.length > 0 ? (
-            <div className="space-y-6">
-              {prescriptions.map((prescription) => (
-                <PrescriptionHistoryCard
-                  key={prescription.id}
-                  prescription={prescription}
-                  medicines={medicines}
-                  doctors={doctors}
-                />
-              ))}
-            </div>
-          ) : (
-            <Card className="text-center py-16 bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
-              <div className="p-6 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-full w-fit mx-auto mb-6">
-                <FaPrescriptionBottleAlt className="h-16 w-16 text-blue-400" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                No prescriptions yet
-              </h3>
-              <p className="text-gray-600 max-w-md mx-auto leading-relaxed mb-6">
-                Medicines prescribed by doctors will appear here after
-                consultations and be securely stored on the blockchain.
-              </p>
               <Button
-                onClick={() => router.push("/patient/book-appointment")}
-                className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                onClick={() => setShowAccessRequestsModal(true)}
+                variant="outline"
+                className="border-2 border-purple-300 text-purple-700 hover:bg-purple-50"
               >
-                <FaStethoscope className="mr-2 h-4 w-4" />
-                Book Medical Appointment
+                <MdHealthAndSafety className="h-4 w-4 mr-2" />
+                Manage Access Requests
               </Button>
-            </Card>
-          )}
-        </div>
-      )}
-    </div>
+            </div>
+
+            <ABEPolicyBadge
+              patientId={patientIdValue}
+              doctorId={null}
+              specialty="treating doctor"
+              allowAdmin={true}
+              className="max-w-4xl mx-auto"
+            />
+
+            {medicalHistory.length > 0 ? (
+              <div className="space-y-6">
+                {medicalHistory.map((record, index) => (
+                  <MedicalHistoryCard
+                    key={index}
+                    record={record}
+                    index={index}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card className="text-center py-16 bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-200">
+                <div className="p-6 bg-gradient-to-r from-emerald-100 to-green-100 rounded-full w-fit mx-auto mb-6">
+                  <FaNotesMedical className="h-16 w-16 text-emerald-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-3">
+                  No medical records yet
+                </h3>
+                <p className="text-gray-600 max-w-md mx-auto leading-relaxed mb-6">
+                  Upload your first encrypted medical record to get started.
+                </p>
+                <Button
+                  onClick={() => setShowUploadModal(true)}
+                  className="bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600"
+                >
+                  <FiUpload className="mr-2 h-4 w-4" />
+                  Upload Medical Record
+                </Button>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* Upload Record Tab */}
+        {activeTab === "upload" && (
+          <div className="space-y-8">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
+                Upload Medical Record
+                <FiUpload className="h-8 w-8 text-purple-600" />
+              </h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+                Securely upload and encrypt your medical records with hybrid AES + CP-ABE encryption
+              </p>
+            </div>
+
+            <MedicalRecordUpload
+              patientId={patientIdValue}
+              doctors={doctors}
+              onSuccess={() => {
+                toast.success("Medical record uploaded successfully!");
+                setActiveTab("medical");
+              }}
+            />
+          </div>
+        )}
+
+        {/* Access Requests Tab */}
+        {activeTab === "access" && (
+          <div className="space-y-8">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 flex items-center justify-center gap-3">
+                Access Request Management
+                <FiShield className="h-8 w-8 text-blue-600" />
+              </h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+                Review and manage doctor access requests to your encrypted medical records
+              </p>
+            </div>
+
+            <AccessRequestManagement patientId={patientIdValue} />
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
       <Modal
-        isOpen={shareModalOpen}
-        onClose={closeShareModal}
-        title="Share Medical Record Access"
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        title="Upload Encrypted Medical Record"
         size="large"
       >
-        <div className="space-y-5">
-          <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-700">
-            Choose the attributes a doctor must satisfy to decrypt this record.
-            We will re-encrypt the selected entry with the hybrid AES + ABE
-            policy you define and store it on IPFS for secure sharing.
-          </div>
+        <MedicalRecordUpload
+          patientId={patientIdValue}
+          doctors={doctors}
+          onSuccess={() => {
+            setShowUploadModal(false);
+            window.location.reload();
+          }}
+        />
+      </Modal>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              Select Doctor
-            </label>
-            <Select
-              value={shareDoctorId}
-              onChange={(e) => {
-                const value = e.target.value;
-                setShareDoctorId(value);
-                const selected = doctors.find(
-                  (doc) => String(doc.id) === value
-                );
-                if (selected?.specialization) {
-                  setShareSpecialty(selected.specialization);
-                }
-              }}
-              className="border-2 border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value="">Select a doctor</option>
-              {doctors.map((doctor) => (
-                <option key={doctor.id} value={doctor.id}>
-                  {doctor.name
-                    ? `Dr. ${doctor.name} (#${doctor.id})`
-                    : `Doctor #${doctor.id}`}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Required Specialty / Attribute
-              </label>
-              <Input
-                type="text"
-                placeholder="e.g. cardiology"
-                value={shareSpecialty}
-                onChange={(e) => setShareSpecialty(e.target.value)}
-                className="border-2 border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Optional – leave blank to allow any specialty.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Required Access Level
-              </label>
-              <Select
-                value={shareAccessLevel}
-                onChange={(e) => setShareAccessLevel(e.target.value)}
-                className="border-2 border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500"
-              >
-                <option value="read">Read only</option>
-                <option value="write">Write</option>
-                <option value="full">Full</option>
-              </Select>
-            </div>
-          </div>
-
-          <label className="flex items-center space-x-3 text-sm font-medium text-gray-700">
-            <input
-              type="checkbox"
-              checked={shareAllowAdmin}
-              onChange={(e) => setShareAllowAdmin(e.target.checked)}
-              className="w-4 h-4 text-emerald-600 border-gray-300 rounded"
-            />
-            <span>Allow admin override (recommended for audit access)</span>
-          </label>
-
-          {shareError && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600">
-              {shareError}
-            </div>
-          )}
-
-          {shareLink && (
-            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200">
-              <p className="text-sm font-semibold text-emerald-700 mb-2 flex items-center gap-2">
-                <FiShield className="h-4 w-4" />
-                Encrypted Share Link
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-white rounded-lg border border-emerald-200 px-3 py-2 text-xs break-all">
-                  {shareLink}
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={handleCopyShareLink}
-                  className="border-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                >
-                  {shareCopied ? (
-                    <FiCheck className="h-4 w-4" />
-                  ) : (
-                    <FiCopy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-end space-x-3">
-            <Button
-              variant="outline"
-              onClick={closeShareModal}
-              className="border-2 border-gray-300 text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleShareAccess}
-              loading={shareLoading}
-              disabled={shareLoading || doctors.length === 0}
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
-            >
-              {shareLoading ? "Encrypting..." : "Create Share Link"}
-            </Button>
-          </div>
-        </div>
+      <Modal
+        isOpen={showAccessRequestsModal}
+        onClose={() => setShowAccessRequestsModal(false)}
+        title="Access Requests Management"
+        size="large"
+      >
+        <AccessRequestManagement patientId={patientIdValue} />
       </Modal>
     </>
   );

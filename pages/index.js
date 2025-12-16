@@ -199,7 +199,7 @@ const HomePage = () => {
   return (
     <div className="min-h-screen overflow-hidden">
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center bg-gradient-to-br from-teal-900 via-emerald-800 to-cyan-900 text-white overflow-hidden">
+      <section className="relative min-h-screen flex items-center bg-gradient-to-br from-[#010A1C] via-[#03211A] to-[#064E3B] text-white overflow-hidden">
         {/* Medical Animated Background Elements */}
         <div className="absolute inset-0">
           <div className="absolute top-10 left-10 w-72 h-72 bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
@@ -242,17 +242,17 @@ const HomePage = () => {
                 </Badge>
               </div>
 
-              <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight">
-                <span className="bg-gradient-to-r from-white to-emerald-200 bg-clip-text text-transparent">
+              <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight tracking-tight">
+                <span className="bg-gradient-to-r from-emerald-100 via-white to-emerald-300 bg-clip-text text-transparent drop-shadow-[0_5px_35px_rgba(16,185,129,0.45)]">
                   Revolutionary
                 </span>
                 <br />
-                <span className="text-white flex items-center gap-4">
+                <span className="text-white flex items-center gap-4 drop-shadow-[0_10px_45px_rgba(15,118,110,0.65)]">
                   Healthcare
                   <FaHeartbeat className="h-16 w-16 text-emerald-400 animate-pulse" />
                 </span>
                 <br />
-                <span className="bg-gradient-to-r from-emerald-200 to-cyan-200 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-cyan-200 via-sky-300 to-indigo-200 bg-clip-text text-transparent">
                   on Blockchain
                 </span>
               </h1>

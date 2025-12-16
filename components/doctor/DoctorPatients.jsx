@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/router";
 import {
@@ -64,6 +64,7 @@ import { Card, Button, Input, Select, Badge, Modal } from "../common";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useHealthcareContract } from "../../hooks/useContract";
 import ipfsService from "../../utils/ipfs";
+import abeEncryption from "../../utils/encryption";
 import {
   formatDate,
   truncateAddress,
@@ -335,12 +336,122 @@ const PatientCard = ({
   );
 };
 
-const PatientProfileModal = ({ patient, isOpen, onClose }) => {
+const PatientProfileModal = ({
+  patient,
+  isOpen,
+  onClose,
+  doctorSpecialty,
+  doctorId,
+}) => {
   const [patientData, setPatientData] = useState(null);
   const [medicalHistory, setMedicalHistory] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const { getPatientMedicalHistory } = useHealthcareContract();
+  const { address } = useAccount();
+
+  const normalizeSpecialty = (value) =>
+    typeof value === "string" && value.trim().length > 0
+      ? value.trim().toLowerCase()
+      : null;
+
+  const decryptMedicalHistoryEntries = async (
+    historyEntries = [],
+    doctorAttributes
+  ) => {
+    const results = [];
+    for (const entry of historyEntries) {
+      if (!entry) {
+        results.push(entry);
+        continue;
+      }
+
+      let parsedEntry = entry;
+      if (typeof parsedEntry === "string") {
+        try {
+          parsedEntry = JSON.parse(parsedEntry);
+        } catch {
+          results.push(entry);
+          continue;
+        }
+      }
+
+      const hydrateEnvelope = async (envelope) => {
+        if (!envelope?.ipfs?.hash || !envelope?.storage?.includes("ipfs")) {
+          return envelope;
+        }
+        try {
+          const remotePayload = await ipfsService.fetchFromIPFS(
+            envelope.ipfs.hash
+          );
+          if (remotePayload?.data) {
+            return {
+              ...envelope,
+              data: remotePayload.data,
+              meta: remotePayload.meta || envelope.meta,
+            };
+          }
+          return {
+            ...envelope,
+            data: remotePayload || envelope.data,
+          };
+        } catch (err) {
+          console.warn("Unable to hydrate doctor record from IPFS:", err);
+          return envelope;
+        }
+      };
+
+      if (
+        parsedEntry?.version === "2" &&
+        parsedEntry?.type === "medicalHistory" &&
+        parsedEntry?.data
+      ) {
+        const envelope = await hydrateEnvelope(parsedEntry);
+        if (envelope?.encrypted && envelope?.data?.encryptedData) {
+          if (!doctorAttributes) {
+            results.push("[Protected medical entry]");
+            continue;
+          }
+          try {
+            const decrypted = await abeEncryption.decrypt(
+              envelope.data,
+              doctorAttributes
+            );
+            results.push(
+              decrypted?.entry
+                ? decrypted.entry
+                : typeof decrypted === "string"
+                ? decrypted
+                : JSON.stringify(decrypted)
+            );
+          } catch (error) {
+            results.push("[Protected medical entry]");
+          }
+          continue;
+        }
+        if (envelope?.data?.entry) {
+          results.push(envelope.data.entry);
+          continue;
+        }
+        if (envelope?.data) {
+          results.push(envelope.data);
+          continue;
+        }
+      }
+
+      if (parsedEntry?.entry) {
+        results.push(parsedEntry.entry);
+        continue;
+      }
+
+      results.push(
+        typeof parsedEntry === "string"
+          ? parsedEntry
+          : JSON.stringify(parsedEntry)
+      );
+    }
+    return results;
+  };
 
   useEffect(() => {
     const fetchPatientDetails = async () => {
@@ -360,7 +471,21 @@ const PatientProfileModal = ({ patient, isOpen, onClose }) => {
 
           // Fetch medical history
           const history = await getPatientMedicalHistory(patient.id);
-          setMedicalHistory(history || []);
+          const doctorAttributes = abeEncryption.getUserAttributes(
+            address,
+            "doctor",
+            patient.id,
+            doctorId != null ? Number(doctorId) : null,
+            {
+              specialty: normalizeSpecialty(doctorSpecialty),
+              accessLevel: "read",
+            }
+          );
+          const processedHistory = await decryptMedicalHistoryEntries(
+            history || [],
+            doctorAttributes
+          );
+          setMedicalHistory(processedHistory || []);
         } catch (error) {
           console.error("Error fetching patient details:", error);
         } finally {
@@ -370,7 +495,7 @@ const PatientProfileModal = ({ patient, isOpen, onClose }) => {
     };
 
     fetchPatientDetails();
-  }, [patient, isOpen]);
+  }, [patient, isOpen, address, doctorSpecialty, doctorId]);
 
   if (!patient) return null;
 
@@ -700,12 +825,28 @@ const DoctorPatients = () => {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [doctorData, setDoctorData] = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [sortBy, setSortBy] = useState("recent");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAddRecordModal, setShowAddRecordModal] = useState(false);
+
+  const doctorSpecialtyLabel = useMemo(() => {
+    const rawSpecialty =
+      doctorProfile?.specialization ||
+      doctorProfile?.speciality ||
+      doctorData?.specialization ||
+      doctorData?.speciality ||
+      "";
+    return typeof rawSpecialty === "string" ? rawSpecialty.trim() : "";
+  }, [doctorProfile, doctorData]);
+
+  const doctorSpecialtyValue =
+    doctorSpecialtyLabel && doctorSpecialtyLabel.length > 0
+      ? doctorSpecialtyLabel
+      : null;
 
   const { address, isConnected } = useAccount();
   const router = useRouter();
@@ -750,6 +891,22 @@ const DoctorPatients = () => {
           ]);
 
         setDoctorData(doctorDetails);
+
+        if (doctorDetails?.IPFS_URL) {
+          try {
+            const hash = doctorDetails.IPFS_URL.replace(
+              "https://gateway.pinata.cloud/ipfs/",
+              ""
+            );
+            const profileData = await ipfsService.fetchFromIPFS(hash);
+            setDoctorProfile(profileData);
+          } catch (profileError) {
+            console.error("Error fetching doctor profile:", profileError);
+            setDoctorProfile(null);
+          }
+        } else {
+          setDoctorProfile(null);
+        }
         setAppointments(doctorAppointments || []);
 
         // Filter patients who have appointments with this doctor
@@ -865,7 +1022,10 @@ const DoctorPatients = () => {
   };
 
   const handleSaveMedicalRecord = async (patientId, record) => {
-    await updatePatientMedicalHistory(patientId, record);
+    const specialtyForRecord = doctorSpecialtyValue;
+    await updatePatientMedicalHistory(patientId, record, {
+      doctorSpecialty: specialtyForRecord,
+    });
   };
 
   if (loading) {
@@ -1212,6 +1372,8 @@ const DoctorPatients = () => {
         patient={selectedPatient}
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
+        doctorSpecialty={doctorSpecialtyValue}
+        doctorId={doctorData?.id ? Number(doctorData.id) : null}
       />
 
       <AddMedicalRecordModal

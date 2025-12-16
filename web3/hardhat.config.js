@@ -31,6 +31,10 @@ module.exports = {
   networks: {
     hardhat: {
       chainId: 1337,
+      mining: {
+        auto: false, // Disable auto-mining
+        interval: 0,
+      },
     },
     sepolia: {
       url: process.env.NETWORK_RPC_URL || "https://rpc.sepolia.org",

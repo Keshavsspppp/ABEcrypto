@@ -349,7 +349,7 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
               </div>
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">HealthChain</h2>
+              <h2 className="text-xl font-bold text-white">MediChain</h2>
               <p className="text-xs text-white text-opacity-90 flex items-center gap-1">
                 <MdBiotech className="h-3 w-3" />
                 Medical DApp Platform
@@ -433,23 +433,7 @@ const Sidebar = ({ isOpen, onClose, userType }) => {
           ))}
         </nav>
 
-        {/* Ambient info tags */}
-        <div className="px-4 grid grid-cols-2 gap-3 text-xs text-gray-600 relative z-10">
-          <div className="px-3 py-2 rounded-xl bg-white/70 border border-emerald-100 shadow-sm">
-            <p className="font-semibold text-emerald-600 flex items-center gap-1 text-[11px]">
-              <MdHealthAndSafety className="h-3.5 w-3.5" />
-              HIPAA Ready
-            </p>
-            <p className="text-[10px] text-gray-500 mt-0.5">Encrypted records</p>
-          </div>
-          <div className="px-3 py-2 rounded-xl bg-white/70 border border-cyan-100 shadow-sm">
-            <p className="font-semibold text-cyan-600 flex items-center gap-1 text-[11px]">
-              <MdBiotech className="h-3.5 w-3.5" />
-              AI Insights
-            </p>
-            <p className="text-[10px] text-gray-500 mt-0.5">Realtime analytics</p>
-          </div>
-        </div>
+        
 
         {/* Modern Quick actions footer */}
         <div className="px-4 py-4 border-t border-gray-200/50 bg-gradient-to-r from-emerald-50/50 to-teal-50/40 backdrop-blur-lg relative z-10">
