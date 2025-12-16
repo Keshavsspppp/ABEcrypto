@@ -58,13 +58,13 @@ ABEcrypto addresses these issues by encrypting medical data at the client side a
 ```bash
 git clone https://github.com/Keshavsspppp/ABEcrypto.git
 cd ABEcrypto
+```
 
-
-install Dependencies
-npm install
+### 2.install Dependencies
+```npm install```
 
 Configure Environment Variables
-
+```
 Create a .env.local file:
 
 NEXT_PUBLIC_ALCHEMY_API_KEY=your_alchemy_api_key
@@ -74,22 +74,22 @@ NEXT_PUBLIC_CONTRACT_ADDRESS=deployed_contract_address
 
 
 ⚠️ Never commit .env.local to version control.
-
+```
 ⛓ Smart Contract Deployment
-cd web3
+```cd web3
 npx hardhat compile
 npx hardhat run scripts/deploy.js --network <network>
-
+```
 
 Update the deployed contract address in .env.local.
 
 ▶️ Running the Application
-npm run dev
+```npm run dev```
 
 
 Access the application at:
 
-http://localhost:3000
+```http://localhost:3000```
 
 🔐 Encryption Workflow
 
